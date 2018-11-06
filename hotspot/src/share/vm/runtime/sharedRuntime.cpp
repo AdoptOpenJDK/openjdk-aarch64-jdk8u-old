@@ -243,6 +243,12 @@ JRT_LEAF(void, SharedRuntime::g1_wb_post(void* card_addr, JavaThread* thread))
   thread->dirty_card_queue().enqueue(card_addr);
 JRT_END
 
+// Shenandoah clone barrier: makes sure that references point to to-space
+// in cloned objects.
+JRT_LEAF(void, SharedRuntime::shenandoah_clone_barrier(oopDesc* obj))
+  oopDesc::bs()->write_region(MemRegion((HeapWord*) obj, obj->size()));
+JRT_END
+
 #endif // INCLUDE_ALL_GCS
 
 
@@ -647,7 +653,7 @@ JRT_END
 // ret_pc points into caller; we are returning caller's exception handler
 // for given exception
 address SharedRuntime::compute_compiled_exc_handler(nmethod* nm, address ret_pc, Handle& exception,
-                                                    bool force_unwind, bool top_frame_only) {
+                                                    bool force_unwind, bool top_frame_only, bool& recursive_exception_occurred) {
   assert(nm != NULL, "must exist");
   ResourceMark rm;
 
@@ -675,6 +681,7 @@ address SharedRuntime::compute_compiled_exc_handler(nmethod* nm, address ret_pc,
         // BCI of the exception handler which caused the exception to be
         // thrown (bugs 4307310 and 4546590). Set "exception" reference
         // argument to ensure that the correct exception is thrown (4870175).
+        recursive_exception_occurred = true;
         exception = Handle(THREAD, PENDING_EXCEPTION);
         CLEAR_PENDING_EXCEPTION;
         if (handler_bci >= 0) {
@@ -1879,7 +1886,7 @@ int SharedRuntime::_monitor_exit_ctr=0;
 #endif
 // Handles the uncommon cases of monitor unlocking in compiled code
 JRT_LEAF(void, SharedRuntime::complete_monitor_unlocking_C(oopDesc* _obj, BasicLock* lock))
-   oop obj(_obj);
+  oop obj(_obj);
 #ifndef PRODUCT
   _monitor_exit_ctr++;              // monitor exit slow
 #endif
@@ -2834,6 +2841,22 @@ void SharedRuntime::convert_ints_to_longints(int i2l_argcnt, int& in_args_count,
     assert(0, "This should not be needed on this platform");
   }
 }
+
+JRT_LEAF(oopDesc*, SharedRuntime::pin_object(JavaThread* thread, oopDesc* obj))
+  assert(Universe::heap()->supports_object_pinning(), "Why we here?");
+  assert(obj != NULL, "Should not be null");
+  oop o(obj);
+  o = Universe::heap()->pin_object(thread, o);
+  assert(o != NULL, "Should not be null");
+  return o;
+JRT_END
+
+JRT_LEAF(void, SharedRuntime::unpin_object(JavaThread* thread, oopDesc* obj))
+  assert(Universe::heap()->supports_object_pinning(), "Why we here?");
+  assert(obj != NULL, "Should not be null");
+  oop o(obj);
+  Universe::heap()->unpin_object(thread, o);
+JRT_END
 
 // -------------------------------------------------------------------------
 // Java-Java calling convention

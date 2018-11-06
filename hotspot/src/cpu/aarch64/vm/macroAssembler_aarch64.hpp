@@ -443,14 +443,13 @@ public:
   // 64 bits of each vector register.
   void push_call_clobbered_registers();
   void pop_call_clobbered_registers();
+  void push_call_clobbered_fp_registers();
+  void pop_call_clobbered_fp_registers();
 
   // now mov instructions for loading absolute addresses and 32 or
   // 64 bit integers
 
-  inline void mov(Register dst, address addr)
-  {
-    mov_immediate64(dst, (u_int64_t)addr);
-  }
+  void mov(Register dst, address addr);
 
   inline void mov(Register dst, u_int64_t imm64)
   {
@@ -534,6 +533,17 @@ public:
   inline void clear_fpsr()
   {
     msr(0b011, 0b0100, 0b0100, 0b001, zr);
+  }
+
+  // Macro instructions for accessing and updating the condition flags
+  inline void get_nzcv(Register reg)
+  {
+    mrs(0b011, 0b0100, 0b0010, 0b000, reg);
+  }
+
+  inline void set_nzcv(Register reg)
+  {
+    msr(0b011, 0b0100, 0b0010, 0b000, reg);
   }
 
   // DCZID_EL0: op1 == 011
@@ -781,11 +791,16 @@ public:
                              Register tmp,
                              Register tmp2);
 
+  void shenandoah_write_barrier(Register dst);
+
 #endif // INCLUDE_ALL_GCS
 
   // split store_check(Register obj) to enhance instruction interleaving
   void store_check_part_1(Register obj);
   void store_check_part_2(Register obj);
+
+  // C 'boolean' to Java boolean: x == 0 ? 0 : 1
+  void c2bool(Register x);
 
   // oop manipulations
   void load_klass(Register dst, Register src);
@@ -933,7 +948,7 @@ public:
   void verify_FPU(int stack_depth, const char* s = "illegal FPU state");
 
   // prints msg, dumps registers and stops execution
-  void stop(const char* msg);
+  void stop(const char* msg, Label *l = NULL);
 
   // prints msg and continues
   void warn(const char* msg);
@@ -970,6 +985,8 @@ public:
   void addptr(const Address &dst, int32_t src);
   void cmpptr(Register src1, Address src2);
 
+  void cmpoops(Register src1, Register src2);
+
   void cmpxchgptr(Register oldv, Register newv, Register addr, Register tmp,
 		  Label &suceed, Label *fail);
 
@@ -997,6 +1014,10 @@ public:
                bool acquire, bool release,
                Register tmp = rscratch1);
 
+  void cmpxchg_oop_shenandoah(Register addr, Register expected, Register new_val,
+                              enum operand_size size,
+                              bool acquire, bool release, bool weak,
+                              Register result = noreg, Register tmp2 = rscratch2);
   // Calls
 
   address trampoline_call(Address entry, CodeBuffer *cbuf = NULL);

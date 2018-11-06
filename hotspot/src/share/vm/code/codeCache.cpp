@@ -339,7 +339,7 @@ void CodeCache::blobs_do(CodeBlobClosure* f) {
 void CodeCache::scavenge_root_nmethods_do(CodeBlobClosure* f) {
   assert_locked_or_safepoint(CodeCache_lock);
 
-  if (UseG1GC) {
+  if (UseG1GC || UseShenandoahGC) {
     return;
   }
 
@@ -369,7 +369,7 @@ void CodeCache::scavenge_root_nmethods_do(CodeBlobClosure* f) {
 void CodeCache::add_scavenge_root_nmethod(nmethod* nm) {
   assert_locked_or_safepoint(CodeCache_lock);
 
-  if (UseG1GC) {
+  if (UseG1GC || UseShenandoahGC) {
     return;
   }
 
@@ -382,7 +382,7 @@ void CodeCache::add_scavenge_root_nmethod(nmethod* nm) {
 void CodeCache::drop_scavenge_root_nmethod(nmethod* nm) {
   assert_locked_or_safepoint(CodeCache_lock);
 
-  if (UseG1GC) {
+  if (UseG1GC || UseShenandoahGC) {
     return;
   }
 
@@ -408,7 +408,7 @@ void CodeCache::drop_scavenge_root_nmethod(nmethod* nm) {
 void CodeCache::prune_scavenge_root_nmethods() {
   assert_locked_or_safepoint(CodeCache_lock);
 
-  if (UseG1GC) {
+  if (UseG1GC || UseShenandoahGC) {
     return;
   }
 
@@ -444,7 +444,7 @@ void CodeCache::prune_scavenge_root_nmethods() {
 
 #ifndef PRODUCT
 void CodeCache::asserted_non_scavengable_nmethods_do(CodeBlobClosure* f) {
-  if (UseG1GC) {
+  if (UseG1GC || UseShenandoahGC) {
     return;
   }
 
@@ -975,4 +975,3 @@ void CodeCache::log_state(outputStream* st) {
             nof_blobs(), nof_nmethods(), nof_adapters(),
             unallocated_capacity());
 }
-

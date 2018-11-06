@@ -28,7 +28,6 @@
 #include "jvmtifiles/jvmti.h"
 #include "runtime/atomic.hpp"
 #include "runtime/extendedPC.hpp"
-#include "runtime/handles.hpp"
 #include "utilities/top.hpp"
 #ifdef TARGET_OS_FAMILY_linux
 # include "jvm_linux.h"
@@ -54,6 +53,7 @@
 #endif
 
 class AgentLibrary;
+class methodHandle;
 
 // os defines the interface to operating system; this includes traditional
 // OS services (time, I/O) as well as other functionality with system-
@@ -152,8 +152,16 @@ class os: AllStatic {
   static size_t page_size_for_region(size_t region_size, size_t min_pages, bool must_be_aligned);
 
   static void initialize_initial_active_processor_count();
+
+  LINUX_ONLY(static void pd_init_container_support();)
+
  public:
   static void init(void);                      // Called before command line parsing
+
+  static void init_container_support() {       // Called during command line parsing.
+     LINUX_ONLY(pd_init_container_support();)
+  }
+
   static void init_before_ergo(void);          // Called after command line parsing
                                                // before VM ergonomics processing.
   static jint init_2(void);                    // Called after command line parsing

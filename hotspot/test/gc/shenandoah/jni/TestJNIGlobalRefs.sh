@@ -25,9 +25,8 @@
 
 ##
 ## @test
-## @bug 8165673
-## @summary regression test for passing float args to a jni function.
-## @run shell/timeout=30 TestFloatJNIArgs.sh
+## @summary Test JNI Global Refs with Shenandoah
+## @run shell/timeout=720 TestJNIGlobalRefs.sh
 ##
 
 if [ "${TESTSRC}" = "" ]
@@ -37,35 +36,35 @@ then
 fi
 echo "TESTSRC=${TESTSRC}"
 ## Adding common setup Variables for running shell tests.
-. ${TESTSRC}/../../test_env.sh
+. ${TESTSRC}/../../../test_env.sh
 
 # set platform-dependent variables
-if [ $VM_OS == "linux" -a $VM_CPU == "aarch64" ]; then
-    echo "Testing on linux-aarch64"
+if [ "$VM_OS" = "linux" ]; then
+    echo "Testing on linux"
     gcc_cmd=`which gcc`
-    if [ "x$gcc_cmd" == "x" ]; then
+    if [ "x$gcc_cmd" = "x" ]; then
         echo "WARNING: gcc not found. Cannot execute test." 2>&1
         exit 0;
     fi
 else
-    echo "Test passed; only valid for linux-aarch64"
+    echo "Test passed; only valid for linux: $VM_OS"
     exit 0;
 fi
 
 THIS_DIR=.
 
 cp ${TESTSRC}${FS}*.java ${THIS_DIR}
-${TESTJAVA}${FS}bin${FS}javac *.java
+${TESTJAVA}${FS}bin${FS}javac TestJNIGlobalRefs.java
 
 $gcc_cmd -O1 -DLINUX -fPIC -shared \
-    -o ${THIS_DIR}${FS}libTestFloatJNIArgs.so \
+    -o ${THIS_DIR}${FS}libTestJNIGlobalRefs.so \
     -I${TESTJAVA}${FS}include \
     -I${TESTJAVA}${FS}include${FS}linux \
-    ${TESTSRC}${FS}libTestFloatJNIArgs.c
+    ${TESTSRC}${FS}libTestJNIGlobalRefs.c
 
 # run the java test in the background
-cmd="${TESTJAVA}${FS}bin${FS}java -Xint \
-    -Djava.library.path=${THIS_DIR}${FS} TestFloatJNIArgs"
+cmd="${TESTJAVA}${FS}bin${FS}java -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+ShenandoahVerify \
+    -Djava.library.path=${THIS_DIR}${FS} TestJNIGlobalRefs"
 
 echo "$cmd"
 eval $cmd
@@ -76,8 +75,8 @@ then
     exit 1
 fi
 
-cmd="${TESTJAVA}${FS}bin${FS}java -XX:+TieredCompilation -Xcomp \
-    -Djava.library.path=${THIS_DIR}${FS} TestFloatJNIArgs"
+cmd="${TESTJAVA}${FS}bin${FS}java -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive \
+    -Djava.library.path=${THIS_DIR}${FS} TestJNIGlobalRefs"
 
 echo "$cmd"
 eval $cmd
@@ -88,8 +87,8 @@ then
     exit 1
 fi
 
-cmd="${TESTJAVA}${FS}bin${FS}java -XX:-TieredCompilation -Xcomp \
-    -Djava.library.path=${THIS_DIR}${FS} TestFloatJNIArgs"
+cmd="${TESTJAVA}${FS}bin${FS}java -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=passive -XX:+ShenandoahVerify \
+    -Djava.library.path=${THIS_DIR}${FS} TestJNIGlobalRefs"
 
 echo "$cmd"
 eval $cmd
@@ -100,5 +99,15 @@ then
     exit 1
 fi
 
-echo "Test Passed"
-exit 0
+cmd="${TESTJAVA}${FS}bin${FS}java -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=passive \
+    -Djava.library.path=${THIS_DIR}${FS} TestJNIGlobalRefs"
+
+echo "$cmd"
+eval $cmd
+
+if [ $? -ne 0 ]
+then
+    echo "Test Failed"
+    exit 1
+fi
+

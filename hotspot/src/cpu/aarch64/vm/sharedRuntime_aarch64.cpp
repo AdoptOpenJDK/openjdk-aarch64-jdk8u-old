@@ -1103,7 +1103,7 @@ static void restore_args(MacroAssembler *masm, int arg_count, int first_arg, VMR
     }
   }
   __ pop(x, sp);
-  for ( int i = first_arg ; i < arg_count ; i++ ) {
+  for ( int i = arg_count - 1 ; i >= first_arg ; i-- ) {
     if (args[i].first()->is_Register()) {
       ;
     } else if (args[i].first()->is_FloatRegister()) {
@@ -1835,11 +1835,13 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
     // Load the oop from the handle
     __ ldr(obj_reg, Address(oop_handle_reg, 0));
 
+    oopDesc::bs()->interpreter_write_barrier(masm, obj_reg);
+
     if (UseBiasedLocking) {
       __ biased_locking_enter(lock_reg, obj_reg, swap_reg, tmp, false, lock_done, &slow_path_lock);
     }
 
-    // Load (object->mark() | 1) into swap_reg %r0
+    // Load (object->mark() | 1) into swap_reg r0
     __ ldr(rscratch1, Address(obj_reg, 0));
     __ orr(swap_reg, rscratch1, 1);
 
@@ -1918,7 +1920,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
 
   // Unpack native results.
   switch (ret_type) {
-  case T_BOOLEAN: __ ubfx(r0, r0, 0, 8);             break;
+  case T_BOOLEAN: __ c2bool(r0);                     break;
   case T_CHAR   : __ ubfx(r0, r0, 0, 16);            break;
   case T_BYTE   : __ sbfx(r0, r0, 0, 8);             break;
   case T_SHORT  : __ sbfx(r0, r0, 0, 16);            break;
@@ -2002,6 +2004,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
 
     // Get locked oop from the handle we passed to jni
     __ ldr(obj_reg, Address(oop_handle_reg, 0));
+    oopDesc::bs()->interpreter_write_barrier(masm, obj_reg);
 
     Label done;
 

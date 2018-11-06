@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -180,11 +180,12 @@ class SharedRuntime: AllStatic {
   // G1 write barriers
   static void g1_wb_pre(oopDesc* orig, JavaThread *thread);
   static void g1_wb_post(void* card_addr, JavaThread* thread);
+  static void shenandoah_clone_barrier(oopDesc* obj);
 #endif // INCLUDE_ALL_GCS
 
   // exception handling and implicit exceptions
   static address compute_compiled_exc_handler(nmethod* nm, address ret_pc, Handle& exception,
-                                              bool force_unwind, bool top_frame_only);
+                                              bool force_unwind, bool top_frame_only, bool& recursive_exception_occurred);
   enum ImplicitExceptionKind {
     IMPLICIT_NULL,
     IMPLICIT_DIVIDE_BY_ZERO,
@@ -489,6 +490,10 @@ class SharedRuntime: AllStatic {
   // dtrace support to convert a Java string to utf8
   static void get_utf(oopDesc* src, address dst);
 #endif // def HAVE_DTRACE_H
+
+  // Pin/Unpin object
+  static oopDesc* pin_object(JavaThread* thread, oopDesc* obj);
+  static void unpin_object(JavaThread* thread, oopDesc* obj);
 
   // A compiled caller has just called the interpreter, but compiled code
   // exists.  Patch the caller so he no longer calls into the interpreter.
