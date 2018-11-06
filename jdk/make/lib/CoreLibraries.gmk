@@ -41,6 +41,8 @@ ifeq ($(OPENJDK_TARGET_OS), linux)
     BUILD_LIBFDLIBM_OPTIMIZATION := HIGH
   else ifeq ($(OPENJDK_TARGET_CPU), ppc64le)
     BUILD_LIBFDLIBM_OPTIMIZATION := HIGH
+  else ifeq ($(OPENJDK_TARGET_CPU), aarch64)
+    BUILD_LIBFDLIBM_OPTIMIZATION := HIGH
   endif
 endif
 
@@ -62,6 +64,7 @@ ifneq ($(OPENJDK_TARGET_OS), macosx)
       CFLAGS_aix := -qfloat=nomaf, \
       CFLAGS_linux_ppc64 := -mno-fused-madd -fno-strict-aliasing, \
       CFLAGS_linux_ppc64le := -ffp-contract=off, \
+      CFLAGS_linux_aarch64 := -ffp-contract=off, \
       ARFLAGS := $(ARFLAGS), \
       OBJECT_DIR := $(JDK_OUTPUTDIR)/objs/libfdlibm, \
       DEBUG_SYMBOLS := $(DEBUG_ALL_BINARIES)))
