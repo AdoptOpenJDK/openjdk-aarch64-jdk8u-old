@@ -86,7 +86,6 @@
 // | signature_handler     (present only if native)       |
 // |------------------------------------------------------|
 
-
 class CheckedExceptionElement;
 class LocalVariableTableElement;
 class AdapterHandlerEntry;
@@ -111,6 +110,7 @@ class Method : public Metadata {
                     _caller_sensitive     : 1,
                     _force_inline         : 1,
                     _hidden               : 1,
+                    _running_emcp         : 1,
                     _dont_inline          : 1,
                     _has_injected_profile : 1,
                                           : 2;
@@ -500,6 +500,12 @@ class Method : public Metadata {
   address signature_handler() const              { return *(signature_handler_addr()); }
   void set_signature_handler(address handler);
 
+#ifdef TARGET_ARCH_aarch64
+  address *call_format_addr() const        { return native_function_addr() + 2; }
+  static ByteSize call_format_offset()    { return in_ByteSize(sizeof(Method) + 2 * wordSize);      }
+  void set_call_format(unsigned int call_format);
+  int unsigned call_format();
+#endif
   // Interpreter oopmap support
   void mask_for(int bci, InterpreterOopMap* mask);
 
@@ -712,6 +718,21 @@ class Method : public Metadata {
   void set_is_obsolete()                            { _access_flags.set_is_obsolete(); }
   bool is_deleted() const                           { return access_flags().is_deleted(); }
   void set_is_deleted()                             { _access_flags.set_is_deleted(); }
+
+  bool is_running_emcp() const {
+    // EMCP methods are old but not obsolete or deleted. Equivalent
+    // Modulo Constant Pool means the method is equivalent except
+    // the constant pool and instructions that access the constant
+    // pool might be different.
+    // If a breakpoint is set in a redefined method, its EMCP methods that are
+    // still running must have a breakpoint also.
+    return _running_emcp;
+  }
+
+  void set_running_emcp(bool x) {
+    _running_emcp = x;
+  }
+
   bool on_stack() const                             { return access_flags().on_stack(); }
   void set_on_stack(const bool value);
 

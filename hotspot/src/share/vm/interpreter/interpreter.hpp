@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,10 +28,8 @@
 #include "code/stubs.hpp"
 #include "interpreter/cppInterpreter.hpp"
 #include "interpreter/templateInterpreter.hpp"
-#ifdef ZERO
 #ifdef TARGET_ARCH_zero
 # include "entry_zero.hpp"
-#endif
 #endif
 
 // This file contains the platform-independent parts
@@ -149,6 +147,9 @@ class Interpreter: public CC_INTERP_ONLY(CppInterpreter) NOT_CC_INTERP(TemplateI
   static InterpreterCodelet* codelet_containing(address pc)     { return (InterpreterCodelet*)_code->stub_containing(pc); }
 #ifdef TARGET_ARCH_x86
 # include "interpreter_x86.hpp"
+#endif
+#ifdef TARGET_ARCH_aarch64
+# include "interpreter_aarch64.hpp"
 #endif
 #ifdef TARGET_ARCH_sparc
 # include "interpreter_sparc.hpp"

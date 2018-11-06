@@ -59,6 +59,9 @@
 #ifdef TARGET_ARCH_x86
 # include "vm_version_x86.hpp"
 #endif
+#ifdef TARGET_ARCH_aarch64
+# include "vm_version_aarch64.hpp"
+#endif
 #ifdef TARGET_ARCH_sparc
 # include "vm_version_sparc.hpp"
 #endif
@@ -398,6 +401,7 @@ IRT_ENTRY(address, InterpreterRuntime::exception_handler_for_exception(JavaThrea
   int                handler_bci;
   int                current_bci = bci(thread);
 
+#ifndef CC_INTERP
   if (thread->frames_to_pop_failed_realloc() > 0) {
     // Allocation of scalar replaced object used in this frame
     // failed. Unconditionally pop the frame.
@@ -413,6 +417,7 @@ IRT_ENTRY(address, InterpreterRuntime::exception_handler_for_exception(JavaThrea
     return Interpreter::remove_activation_entry();
 #endif
   }
+#endif
 
   // Need to do this check first since when _do_not_unlock_if_synchronized
   // is set, we don't want to trigger any classloading which may make calls
@@ -1275,7 +1280,7 @@ IRT_ENTRY(void, InterpreterRuntime::prepare_native_call(JavaThread* thread, Meth
   // preparing the same method will be sure to see non-null entry & mirror.
 IRT_END
 
-#if defined(IA32) || defined(AMD64) || defined(ARM)
+#if defined(IA32) || defined(AMD64) || defined(ARM) || defined(AARCH64)
 IRT_LEAF(void, InterpreterRuntime::popframe_move_outgoing_args(JavaThread* thread, void* src_address, void* dest_address))
   if (src_address == dest_address) {
     return;
