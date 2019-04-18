@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -107,6 +107,16 @@ void ConstantPool::release_C_heap_structures() {
 
 objArrayOop ConstantPool::resolved_references() const {
   return (objArrayOop)JNIHandles::resolve(_resolved_references);
+}
+
+// Called from outside constant pool resolution where a resolved_reference array
+// may not be present.
+objArrayOop ConstantPool::resolved_references_or_null() const {
+  if (_cache == NULL) {
+    return NULL;
+  } else {
+    return (objArrayOop)JNIHandles::resolve(_resolved_references);
+  }
 }
 
 // Create resolved_references array and mapping array for original cp indexes
@@ -329,8 +339,6 @@ Klass* ConstantPool::klass_at_impl(constantPoolHandle this_oop, int which, TRAPS
       // Only updated constant pool - if it is resolved.
       do_resolve = this_oop->tag_at(which).is_unresolved_klass();
       if (do_resolve) {
-        ClassLoaderData* this_key = this_oop->pool_holder()->class_loader_data();
-        this_key->record_dependency(k(), CHECK_NULL); // Can throw OOM
         this_oop->klass_at_put(which, k());
       }
     }
@@ -520,7 +528,7 @@ int ConstantPool::signature_ref_index_at(int which_nt) {
 
 
 Klass* ConstantPool::klass_ref_at(int which, TRAPS) {
-  return klass_at(klass_ref_index_at(which), CHECK_NULL);
+  return klass_at(klass_ref_index_at(which), THREAD);
 }
 
 
@@ -1494,7 +1502,7 @@ static void print_cpool_bytes(jint cnt, u1 *bytes) {
       }
       case JVM_CONSTANT_Long: {
         u8 val = Bytes::get_Java_u8(bytes);
-        printf("long         "INT64_FORMAT, (int64_t) *(jlong *) &val);
+        printf("long         " INT64_FORMAT, (int64_t) *(jlong *) &val);
         ent_size = 8;
         idx++; // Long takes two cpool slots
         break;

@@ -1,5 +1,6 @@
 #
 # Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2019 Red Hat, Inc.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -61,6 +62,10 @@ CXX_FLAGS=$(CXX_FLAGS) /D "HOTSPOT_LIB_ARCH=\"$(HOTSPOT_LIB_ARCH)\""
 CXX_FLAGS=$(CXX_FLAGS) /D "HOTSPOT_BUILD_TARGET=\"$(BUILD_FLAVOR)\""
 CXX_FLAGS=$(CXX_FLAGS) /D "HOTSPOT_BUILD_USER=\"$(BuildUser)\""
 CXX_FLAGS=$(CXX_FLAGS) /D "HOTSPOT_VM_DISTRO=\"$(HOTSPOT_VM_DISTRO)\""
+CXX_FLAGS=$(CXX_FLAGS) /D "VENDOR=\"$(COMPANY_NAME)\""
+CXX_FLAGS=$(CXX_FLAGS) /D "VENDOR_URL=\"$(VENDOR_URL)\""
+CXX_FLAGS=$(CXX_FLAGS) /D "VENDOR_URL_BUG=\"$(VENDOR_URL_BUG)\""
+CXX_FLAGS=$(CXX_FLAGS) /D "VENDOR_URL_VM_BUG=\"$(VENDOR_URL_VM_BUG)\""
 
 CXX_FLAGS=$(CXX_FLAGS) $(CXX_INCLUDE_DIRS)
 
@@ -128,8 +133,8 @@ CXX_DONT_USE_PCH=/D DONT_USE_PRECOMPILED_HEADER
 
 !if "$(USE_PRECOMPILED_HEADER)" != "0"
 CXX_USE_PCH=/Fp"vm.pch" /Yu"precompiled.hpp"
-!if "$(COMPILER_NAME)" == "VS2012"
-# VS2012 requires this object file to be listed:
+!if "$(COMPILER_NAME)" == "VS2012" || "$(COMPILER_NAME)" == "VS2013" || "$(COMPILER_NAME)" == "VS2015" || "$(COMPILER_NAME)" == "VS2017"
+# VS2012 and later require this object file to be listed:
 LD_FLAGS=$(LD_FLAGS) _build_pch_file.obj
 !endif
 !else

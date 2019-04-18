@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -209,12 +209,22 @@ void ConstantPoolCacheEntry::set_direct_or_vtable_call(Bytecodes::Code invoke_co
   if (byte_no == 1) {
     assert(invoke_code != Bytecodes::_invokevirtual &&
            invoke_code != Bytecodes::_invokeinterface, "");
+    bool do_resolve = true;
     // Don't mark invokespecial to method as resolved if sender is an interface.  The receiver
     // has to be checked that it is a subclass of the current class every time this bytecode
     // is executed.
-    if (invoke_code != Bytecodes::_invokespecial || !sender_is_interface ||
-        method->name() == vmSymbols::object_initializer_name()) {
-    set_bytecode_1(invoke_code);
+    if (invoke_code == Bytecodes::_invokespecial && sender_is_interface &&
+        method->name() != vmSymbols::object_initializer_name()) {
+      do_resolve = false;
+    }
+    // Don't mark invokestatic to method as resolved if the holder class has not yet completed
+    // initialization. An invokestatic must only proceed if the class is initialized, but if
+    // we resolve it before then that class initialization check is skipped.
+    if (invoke_code == Bytecodes::_invokestatic && !method->method_holder()->is_initialized()) {
+      do_resolve = false;
+    }
+    if (do_resolve) {
+        set_bytecode_1(invoke_code);
     }
   } else if (byte_no == 2)  {
     if (change_to_virtual) {
@@ -314,7 +324,7 @@ void ConstantPoolCacheEntry::set_method_handle_common(constantPoolHandle cpool,
                    adapter->size_of_parameters());
 
   if (TraceInvokeDynamic) {
-    tty->print_cr("set_method_handle bc=%d appendix="PTR_FORMAT"%s method_type="PTR_FORMAT"%s method="PTR_FORMAT" ",
+    tty->print_cr("set_method_handle bc=%d appendix=" PTR_FORMAT "%s method_type=" PTR_FORMAT "%s method=" PTR_FORMAT " ",
                   invoke_code,
                   (void *)appendix(),    (has_appendix    ? "" : " (unused)"),
                   (void *)method_type(), (has_method_type ? "" : " (unused)"),
@@ -528,12 +538,12 @@ void ConstantPoolCacheEntry::print(outputStream* st, int index) const {
   // print separator
   if (index == 0) st->print_cr("                 -------------");
   // print entry
-  st->print("%3d  ("PTR_FORMAT")  ", index, (intptr_t)this);
+  st->print("%3d  (" PTR_FORMAT ")  ", index, (intptr_t)this);
   st->print_cr("[%02x|%02x|%5d]", bytecode_2(), bytecode_1(),
                constant_pool_index());
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_f1);
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_f2);
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_flags);
+  st->print_cr("                 [   " PTR_FORMAT "]", (intptr_t)_f1);
+  st->print_cr("                 [   " PTR_FORMAT "]", (intptr_t)_f2);
+  st->print_cr("                 [   " PTR_FORMAT "]", (intptr_t)_flags);
   st->print_cr("                 -------------");
 }
 

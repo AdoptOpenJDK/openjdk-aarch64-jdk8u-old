@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -780,8 +780,8 @@ class CommandLineFlags {
           "Time out and warn or fail after SafepointTimeoutDelay "          \
           "milliseconds if failed to reach safepoint")                      \
                                                                             \
-  develop(bool, DieOnSafepointTimeout, false,                               \
-          "Die upon failure to reach safepoint (see SafepointTimeout)")     \
+  diagnostic(bool, AbortVMOnSafepointTimeout, false,                        \
+          "Abort upon failure to reach safepoint (see SafepointTimeout)")   \
                                                                             \
   /* 50 retries * (5 * current_retry_count) millis = ~6.375 seconds */      \
   /* typically, at most a few retries are needed */                         \
@@ -1135,6 +1135,10 @@ class CommandLineFlags {
   develop(bool, UseDetachedThreads, true,                                   \
           "Use detached threads that are recycled upon termination "        \
           "(for Solaris only)")                                             \
+                                                                            \
+  experimental(bool, DisablePrimordialThreadGuardPages, false,              \
+               "Disable the use of stack guard pages if the JVM is loaded " \
+               "on the primordial process thread")                          \
                                                                             \
   product(bool, UseLWPSynchronization, true,                                \
           "Use LWP-based instead of libthread-based synchronization "       \

@@ -150,7 +150,7 @@ CFLAGS += -fno-rtti
 CFLAGS += -fno-exceptions
 CFLAGS += -D_REENTRANT
 ifeq ($(USE_CLANG),)
-  CFLAGS += -fcheck-new
+  CFLAGS += -fcheck-new -fstack-protector
   # version 4 and above support fvisibility=hidden (matches jni_x86.h file)
   # except 4.1.2 gives pointless warnings that can't be disabled (afaik)
   ifneq "$(shell expr \( $(CC_VER_MAJOR) \> 4 \) \| \( \( $(CC_VER_MAJOR) = 4 \) \& \( $(CC_VER_MINOR) \>= 3 \) \))" "0"
@@ -184,6 +184,10 @@ CFLAGS     += $(ARCHFLAG)
 AOUT_FLAGS += $(ARCHFLAG)
 LFLAGS     += $(ARCHFLAG)
 ASFLAGS    += $(ARCHFLAG)
+
+ifeq ($(DEBUG_BINARIES), true)
+  ASFLAGS    += $(ASFLAGS_DEBUG_SYMBOLS)
+endif
 
 # Use C++ Interpreter
 ifdef CC_INTERP
@@ -277,6 +281,8 @@ endif
 
 # statically link libstdc++.so, work with gcc but ignored by g++
 STATIC_STDCXX = -Wl,-Bstatic -lstdc++ -Wl,-Bdynamic
+# While the VM needs the above line, adlc needs a separate setting:
+ADLC_STATIC_STDCXX = -static-libstdc++
 
 ifeq ($(USE_CLANG),)
   # statically link libgcc and/or libgcc_s, libgcc does not exist before gcc-3.x.
@@ -335,56 +341,20 @@ endif
 ifeq ($(DEBUG_BINARIES), true)
   CFLAGS += -g
 else
-  # Use the stabs format for debugging information (this is the default
-  # on gcc-2.91). It's good enough, has all the information about line
-  # numbers and local variables, and libjvm.so is only about 16M.
-  # Change this back to "-g" if you want the most expressive format.
-  # (warning: that could easily inflate libjvm.so to 150M!)
-  # Note: The Itanium gcc compiler crashes when using -gstabs.
-  DEBUG_CFLAGS/ia64  = -g
-  DEBUG_CFLAGS/amd64 = -g
-  DEBUG_CFLAGS/aarch64 = -g
-  DEBUG_CFLAGS/ppc64 = -g
-  DEBUG_CFLAGS/zero = -g
   DEBUG_CFLAGS += $(DEBUG_CFLAGS/$(BUILDARCH))
   ifeq ($(DEBUG_CFLAGS/$(BUILDARCH)),)
-      ifeq ($(USE_CLANG), true)
-        # Clang doesn't understand -gstabs
-        DEBUG_CFLAGS/$(BUILDARCH) = -g
-      else
-        DEBUG_CFLAGS/$(BUILDARCH) = -gstabs
-      endif
+    DEBUG_CFLAGS += -g
   endif
   
   ifeq ($(ENABLE_FULL_DEBUG_SYMBOLS),1)
-    FASTDEBUG_CFLAGS/ia64  = -g
-    FASTDEBUG_CFLAGS/amd64 = -g
-    FASTDEBUG_CFLAGS/aarch64 = -g
-    FASTDEBUG_CFLAGS/ppc64 = -g
-    FASTDEBUG_CFLAGS/zero = -g
     FASTDEBUG_CFLAGS += $(FASTDEBUG_CFLAGS/$(BUILDARCH))
     ifeq ($(FASTDEBUG_CFLAGS/$(BUILDARCH)),)
-      ifeq ($(USE_CLANG), true)
-        # Clang doesn't understand -gstabs
-        FASTDEBUG_CFLAGS/$(BUILDARCH) = -g
-      else
-        FASTDEBUG_CFLAGS/$(BUILDARCH) = -gstabs
-      endif
+      FASTDEBUG_CFLAGS/$(BUILDARCH) = -g
     endif
   
-    OPT_CFLAGS/ia64  = -g
-    OPT_CFLAGS/amd64 = -g
-    OPT_CFLAGS/aarch64 = -g
-    OPT_CFLAGS/ppc64 = -g
-    OPT_CFLAGS/zero = -g
     OPT_CFLAGS += $(OPT_CFLAGS/$(BUILDARCH))
     ifeq ($(OPT_CFLAGS/$(BUILDARCH)),)
-      ifeq ($(USE_CLANG), true)
-        # Clang doesn't understand -gstabs
-        OPT_CFLAGS/$(BUILDARCH) = -g
-      else
-        OPT_CFLAGS/$(BUILDARCH) = -gstabs
-      endif
+      OPT_CFLAGS/$(BUILDARCH) = -g
     endif
   endif
 endif
