@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1135,9 +1135,10 @@ public class CPlatformWindow extends CFRetainedResource implements PlatformWindo
         // the windows are ordered above their nearest owner; ancestors of the window,
         // which is going to become 'main window', are placed above their siblings.
         CPlatformWindow rootOwner = getRootOwner();
-        if (rootOwner.isVisible() && !rootOwner.isIconified()) {
+        if (rootOwner.isVisible() && !rootOwner.isIconified() && !rootOwner.isActive()) {
             rootOwner.execute(CWrapper.NSWindow::orderFront);
         }
+
         // Do not order child windows of iconified owner.
         if (!rootOwner.isIconified()) {
             final WindowAccessor windowAccessor = AWTAccessor.getWindowAccessor();
@@ -1195,6 +1196,21 @@ public class CPlatformWindow extends CFRetainedResource implements PlatformWindo
         } else if (target.getType() == Window.Type.POPUP) {
             execute(ptr->CWrapper.NSWindow.setLevel(ptr, CWrapper.NSWindow.NSPopUpMenuWindowLevel));
         }
+    }
+
+    private Window getOwnerFrameOrDialog(Window window) {
+        Window owner = window.getOwner();
+        while (owner != null && !(owner instanceof Frame || owner instanceof Dialog)) {
+            owner = owner.getOwner();
+        }
+        return owner;
+    }
+
+    private boolean isSimpleWindowOwnedByEmbeddedFrame() {
+        if (peer != null && peer.isSimpleWindow()) {
+            return (getOwnerFrameOrDialog(target) instanceof CEmbeddedFrame);
+        }
+        return false;
     }
 
     // ----------------------------------------------------------------------
