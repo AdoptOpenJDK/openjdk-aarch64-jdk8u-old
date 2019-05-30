@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2016, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -43,16 +43,16 @@ private:
   size_t _capacity;
   size_t _used;
 
-  void assert_bounds() const PRODUCT_RETURN;
-  void assert_heaplock_owned_by_current_thread() const PRODUCT_RETURN;
-  void assert_heaplock_not_owned_by_current_thread() const PRODUCT_RETURN;
+  void assert_bounds() const NOT_DEBUG_RETURN;
+  void assert_heaplock_owned_by_current_thread() const NOT_DEBUG_RETURN;
+  void assert_heaplock_not_owned_by_current_thread() const NOT_DEBUG_RETURN;
 
   bool is_mutator_free(size_t idx) const;
   bool is_collector_free(size_t idx) const;
 
-  HeapWord* try_allocate_in(ShenandoahHeapRegion* region, ShenandoahHeap::ShenandoahAllocationRequest& req, bool& in_new_region);
-  HeapWord* allocate_single(ShenandoahHeap::ShenandoahAllocationRequest& req, bool& in_new_region);
-  HeapWord* allocate_contiguous(ShenandoahHeap::ShenandoahAllocationRequest& req);
+  HeapWord* try_allocate_in(ShenandoahHeapRegion* region, ShenandoahAllocRequest& req, bool& in_new_region);
+  HeapWord* allocate_single(ShenandoahAllocRequest& req, bool& in_new_region);
+  HeapWord* allocate_contiguous(ShenandoahAllocRequest& req);
 
   void flip_to_gc(ShenandoahHeapRegion* r);
 
@@ -89,7 +89,7 @@ public:
     return _capacity - _used;
   }
 
-  HeapWord* allocate(ShenandoahHeap::ShenandoahAllocationRequest& req, bool& in_new_region);
+  HeapWord* allocate(ShenandoahAllocRequest& req, bool& in_new_region);
   size_t unsafe_peek_free() const;
   void print_on(outputStream* out) const;
 };

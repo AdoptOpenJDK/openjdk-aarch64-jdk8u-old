@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,8 +47,8 @@
 #include "services/serviceUtil.hpp"
 #include "utilities/macros.hpp"
 #if INCLUDE_ALL_GCS
-#include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
 #include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
+#include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
 #endif // INCLUDE_ALL_GCS
 
 // JvmtiTagHashmapEntry
@@ -166,6 +166,11 @@ class JvmtiTagHashmap : public CHeapObj<mtInternal> {
   static unsigned int hash(oop key, int size) {
     // shift right to get better distribution (as these bits will be zero
     // with aligned addresses)
+#if INCLUDE_ALL_GCS
+    if (UseShenandoahGC) {
+      key = oopDesc::bs()->write_barrier(key);
+    }
+#endif
     unsigned int addr = (unsigned int)(cast_from_oop<intptr_t>(key));
 #ifdef _LP64
     return (addr >> 3) % size;
@@ -302,7 +307,7 @@ class JvmtiTagHashmap : public CHeapObj<mtInternal> {
     unsigned int h = hash(key);
     JvmtiTagHashmapEntry* entry = _table[h];
     while (entry != NULL) {
-      if (entry->object() == key) {
+      if (oopDesc::equals(entry->object(), key)) {
          return entry;
       }
       entry = entry->next();
@@ -344,7 +349,7 @@ class JvmtiTagHashmap : public CHeapObj<mtInternal> {
     JvmtiTagHashmapEntry* entry = _table[h];
     JvmtiTagHashmapEntry* prev = NULL;
     while (entry != NULL) {
-      if (key == entry->object()) {
+      if (oopDesc::equals(key, entry->object())) {
         break;
       }
       prev = entry;

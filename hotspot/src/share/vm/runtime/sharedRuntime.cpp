@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -773,6 +773,8 @@ JRT_ENTRY(void, SharedRuntime::throw_StackOverflowError(JavaThread* thread))
   if (StackTraceInThrowable) {
     java_lang_Throwable::fill_in_stack_trace(exception);
   }
+  // Increment counter for hs_err file reporting
+  Atomic::inc(&Exceptions::_stack_overflow_errors);
   throw_and_post_jvmti_exception(thread, exception);
 JRT_END
 
@@ -1243,6 +1245,14 @@ methodHandle SharedRuntime::resolve_sub_helper(JavaThread *thread,
     tty->print_cr(" at pc: " INTPTR_FORMAT " to code: " INTPTR_FORMAT, caller_frame.pc(), callee_method->code());
   }
 #endif
+
+  // Do not patch call site for static call when the class is not
+  // fully initialized.
+  if (invoke_code == Bytecodes::_invokestatic &&
+      !callee_method->method_holder()->is_initialized()) {
+    assert(callee_method->method_holder()->is_linked(), "must be");
+    return callee_method;
+  }
 
   // JSR 292 key invariant:
   // If the resolved method is a MethodHandle invoke target, the call

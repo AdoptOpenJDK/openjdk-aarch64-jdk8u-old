@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,7 +28,7 @@
 #include "classfile/symbolTable.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "compiler/compileLog.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "libadt/dict.hpp"
 #include "memory/gcLocker.hpp"
 #include "memory/oopFactory.hpp"
@@ -52,7 +52,7 @@ PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 Dict* Type::_shared_type_dict = NULL;
 
 // Array which maps compiler types to Basic Types
-Type::TypeInfo Type::_type_info[Type::lastype] = {
+const Type::TypeInfo Type::_type_info[Type::lastype] = {
   { Bad,             T_ILLEGAL,    "bad",           false, Node::NotAMachineReg, relocInfo::none          },  // Bad
   { Control,         T_ILLEGAL,    "control",       false, 0,                    relocInfo::none          },  // Control
   { Bottom,          T_VOID,       "top",           false, 0,                    relocInfo::none          },  // Top
@@ -886,6 +886,13 @@ void Type::dump_on(outputStream *st) const {
     st->print(" [narrowklass]");
   }
 }
+
+//-----------------------------------------------------------------------------
+const char* Type::str(const Type* t) {
+  stringStream ss;
+  t->dump_on(&ss);
+  return ss.as_string();
+}
 #endif
 
 //------------------------------singleton--------------------------------------
@@ -1323,8 +1330,8 @@ const Type *TypeInt::narrow( const Type *old ) const {
 
   // The new type narrows the old type, so look for a "death march".
   // See comments on PhaseTransform::saturate.
-  juint nrange = _hi - _lo;
-  juint orange = ohi - olo;
+  juint nrange = (juint)_hi - _lo;
+  juint orange = (juint)ohi - olo;
   if (nrange < max_juint - 1 && nrange > (orange >> 1) + (SMALLINT*2)) {
     // Use the new type only if the range shrinks a lot.
     // We do not want the optimizer computing 2^31 point by point.
@@ -1357,7 +1364,7 @@ bool TypeInt::eq( const Type *t ) const {
 //------------------------------hash-------------------------------------------
 // Type-specific hashing function.
 int TypeInt::hash(void) const {
-  return _lo+_hi+_widen+(int)Type::Int;
+  return java_add(java_add(_lo, _hi), java_add(_widen, (int)Type::Int));
 }
 
 //------------------------------is_finite--------------------------------------
@@ -1538,7 +1545,7 @@ const Type *TypeLong::widen( const Type *old, const Type* limit ) const {
         // If neither endpoint is extremal yet, push out the endpoint
         // which is closer to its respective limit.
         if (_lo >= 0 ||                 // easy common case
-            (julong)(_lo - min) >= (julong)(max - _hi)) {
+            ((julong)_lo - min) >= ((julong)max - _hi)) {
           // Try to widen to an unsigned range type of 32/63 bits:
           if (max >= max_juint && _hi < max_juint)
             return make(_lo, max_juint, WidenMax);
@@ -2308,7 +2315,7 @@ bool TypePtr::eq( const Type *t ) const {
 //------------------------------hash-------------------------------------------
 // Type-specific hashing function.
 int TypePtr::hash(void) const {
-  return _ptr + _offset;
+  return java_add(_ptr, _offset);
 }
 
 //------------------------------dump2------------------------------------------
@@ -2495,7 +2502,7 @@ TypeOopPtr::TypeOopPtr(TYPES t, PTR ptr, ciKlass* k, bool xk, ciObject* o, int o
   if (_offset != 0) {
     if (_offset == oopDesc::klass_offset_in_bytes()) {
       _is_ptr_to_narrowklass = UseCompressedClassPointers;
-    } else if (UseShenandoahGC && _offset == BrooksPointer::byte_offset()) {
+    } else if (UseShenandoahGC && _offset == ShenandoahBrooksPointer::byte_offset()) {
       // Shenandoah doesn't support compressed forwarding pointers
     } else if (klass() == NULL) {
       // Array with unknown body type
@@ -2905,12 +2912,8 @@ bool TypeOopPtr::eq( const Type *t ) const {
 // Type-specific hashing function.
 int TypeOopPtr::hash(void) const {
   return
-    (const_oop() ? const_oop()->hash() : 0) +
-    _klass_is_exact +
-    _instance_id +
-    hash_speculative() +
-    _inline_depth +
-    TypePtr::hash();
+    java_add(java_add(java_add(const_oop() ? const_oop()->hash() : 0, _klass_is_exact),
+                      java_add(_instance_id , hash_speculative())), java_add(_inline_depth , TypePtr::hash()));
 }
 
 //------------------------------dump2------------------------------------------
@@ -3641,7 +3644,7 @@ bool TypeInstPtr::eq( const Type *t ) const {
 //------------------------------hash-------------------------------------------
 // Type-specific hashing function.
 int TypeInstPtr::hash(void) const {
-  int hash = klass()->hash() + TypeOopPtr::hash();
+  int hash = java_add(klass()->hash(), TypeOopPtr::hash());
   return hash;
 }
 
@@ -4542,7 +4545,7 @@ bool TypeKlassPtr::eq( const Type *t ) const {
 //------------------------------hash-------------------------------------------
 // Type-specific hashing function.
 int TypeKlassPtr::hash(void) const {
-  return klass()->hash() + TypePtr::hash();
+  return java_add(klass()->hash(), TypePtr::hash());
 }
 
 //------------------------------singleton--------------------------------------

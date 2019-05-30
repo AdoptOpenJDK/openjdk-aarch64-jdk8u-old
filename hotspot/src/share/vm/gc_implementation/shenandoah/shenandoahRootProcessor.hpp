@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,24 +24,13 @@
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHROOTPROCESSOR_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHROOTPROCESSOR_HPP
 
-#include "classfile/classLoaderData.hpp"
 #include "code/codeCache.hpp"
-#include "memory/sharedHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectorPolicy.hpp"
 #include "gc_implementation/shenandoah/shenandoahCodeRoots.hpp"
 #include "gc_implementation/shenandoah/shenandoahPhaseTimings.hpp"
 #include "memory/allocation.hpp"
-#include "runtime/mutex.hpp"
-
-class CLDClosure;
-class CodeBlobClosure;
-class G1CollectedHeap;
-class G1GCPhaseTimes;
-class G1ParPushHeapRSClosure;
-class Monitor;
-class OopClosure;
-class SubTasksDone;
+#include "utilities/workgroup.hpp"
 
 class ParallelCLDRootIterator VALUE_OBJ_CLASS_SPEC {
 public:
@@ -109,10 +98,16 @@ public:
 };
 
 class ShenandoahRootEvacuator : public StackObj {
+  SubTasksDone* _evacuation_tasks;
   SharedHeap::StrongRootsScope _srs;
   ShenandoahPhaseTimings::Phase _phase;
   ShenandoahCsetCodeRootsIterator _coderoots_cset_iterator;
 
+  enum Shenandoah_evacuate_roots_tasks {
+    SHENANDOAH_EVAC_jvmti_oops_do,
+    // Leave this one last.
+    SHENANDOAH_EVAC_NumElements
+  };
 public:
   ShenandoahRootEvacuator(ShenandoahHeap* heap, uint n_workers,
                           ShenandoahPhaseTimings::Phase phase);

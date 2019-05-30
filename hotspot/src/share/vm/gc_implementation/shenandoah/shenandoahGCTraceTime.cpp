@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,9 +35,8 @@
 #include "utilities/ostream.hpp"
 #include "utilities/ticks.inline.hpp"
 
-
 ShenandoahGCTraceTime::ShenandoahGCTraceTime(const char* title, bool doit, GCTimer* timer, GCId gc_id, bool print_heap) :
-    _title(title), _doit(doit), _timer(timer), _start_counter(), _heap(ShenandoahHeap::heap()), _print_heap(print_heap) {
+    _title(title), _doit(doit), _timer(timer), _start_counter(), _heap(ShenandoahHeap::heap()), _print_heap(print_heap), _gc_id(gc_id) {
   if (_doit || _timer != NULL) {
     _start_counter.stamp();
   }
@@ -51,11 +50,18 @@ ShenandoahGCTraceTime::ShenandoahGCTraceTime(const char* title, bool doit, GCTim
 
     gclog_or_tty->date_stamp(PrintGCDateStamps);
     gclog_or_tty->stamp(PrintGCTimeStamps);
-    if (PrintGCID && !gc_id.is_undefined()) {
-      gclog_or_tty->print("#%u: ", gc_id.id());
+    if (PrintGCID && !_gc_id.is_undefined()) {
+      gclog_or_tty->print("#%u: ", _gc_id.id());
     }
     gclog_or_tty->print("[%s", title);
+
+    // Detailed view prints the "start" message
+    if (PrintGCDetails) {
+      gclog_or_tty->print_cr(", start]");
+    }
+
     gclog_or_tty->flush();
+    gclog_or_tty->inc();
   }
 }
 
@@ -77,6 +83,16 @@ ShenandoahGCTraceTime::~ShenandoahGCTraceTime() {
     size_t bytes_after = _heap->used();
     size_t capacity = _heap->capacity();
 
+    // Detailed view has to restart the logging here, because "start" was printed
+    if (PrintGCDetails) {
+      gclog_or_tty->date_stamp(PrintGCDateStamps);
+      gclog_or_tty->stamp(PrintGCTimeStamps);
+      if (PrintGCID && !_gc_id.is_undefined()) {
+        gclog_or_tty->print("#%u: ", _gc_id.id());
+      }
+      gclog_or_tty->print("[%s", _title);
+    }
+
     if (_print_heap) {
       gclog_or_tty->print(" " SIZE_FORMAT "%s->" SIZE_FORMAT "%s(" SIZE_FORMAT  "%s)",
                           byte_size_in_proper_unit(_bytes_before),
@@ -87,6 +103,7 @@ ShenandoahGCTraceTime::~ShenandoahGCTraceTime() {
                           proper_unit_for_byte_size(capacity));
     }
 
+    gclog_or_tty->dec();
     gclog_or_tty->print_cr(", %.3f ms]", secs * 1000);
     gclog_or_tty->flush();
   }

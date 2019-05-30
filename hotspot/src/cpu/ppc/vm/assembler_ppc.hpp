@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012, 2013 SAP AG. All rights reserved.
+ * Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2018, SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -468,6 +468,12 @@ class Assembler : public AbstractAssembler {
     LVSL_OPCODE    = (31u << OPCODE_SHIFT |    6u << 1),
     LVSR_OPCODE    = (31u << OPCODE_SHIFT |   38u << 1),
 
+    // Vector-Scalar (VSX) instruction support.
+    LXVD2X_OPCODE  = (31u << OPCODE_SHIFT |  844u << 1),
+    STXVD2X_OPCODE = (31u << OPCODE_SHIFT |  972u << 1),
+    MTVSRD_OPCODE  = (31u << OPCODE_SHIFT |  179u << 1),
+    MFVSRD_OPCODE  = (31u << OPCODE_SHIFT |   51u << 1),
+
     // Vector Permute and Formatting
     VPKPX_OPCODE   = (4u  << OPCODE_SHIFT |  782u     ),
     VPKSHSS_OPCODE = (4u  << OPCODE_SHIFT |  398u     ),
@@ -666,8 +672,10 @@ class Assembler : public AbstractAssembler {
     // Atomics.
     LWARX_OPCODE   = (31u << OPCODE_SHIFT |   20u << 1),
     LDARX_OPCODE   = (31u << OPCODE_SHIFT |   84u << 1),
+    LQARX_OPCODE   = (31u << OPCODE_SHIFT |  276u << 1),
     STWCX_OPCODE   = (31u << OPCODE_SHIFT |  150u << 1),
-    STDCX_OPCODE   = (31u << OPCODE_SHIFT |  214u << 1)
+    STDCX_OPCODE   = (31u << OPCODE_SHIFT |  214u << 1),
+    STQCX_OPCODE   = (31u << OPCODE_SHIFT |  182u << 1)
 
   };
 
@@ -1047,6 +1055,19 @@ class Assembler : public AbstractAssembler {
   static int vrc(   VectorRegister r)  { return  vrc(r->encoding());}
   static int vrs(   VectorRegister r)  { return  vrs(r->encoding());}
   static int vrt(   VectorRegister r)  { return  vrt(r->encoding());}
+
+  // Support Vector-Scalar (VSX) instructions.
+  static int vsra(      int         x)  { return  opp_u_field(x,            15, 11); }
+  static int vsrb(      int         x)  { return  opp_u_field(x,            20, 16); }
+  static int vsrc(      int         x)  { return  opp_u_field(x,            25, 21); }
+  static int vsrs(      int         x)  { return  opp_u_field(x,            10,  6); }
+  static int vsrt(      int         x)  { return  opp_u_field(x,            10,  6); }
+
+  static int vsra(   VectorSRegister r)  { return  vsra(r->encoding());}
+  static int vsrb(   VectorSRegister r)  { return  vsrb(r->encoding());}
+  static int vsrc(   VectorSRegister r)  { return  vsrc(r->encoding());}
+  static int vsrs(   VectorSRegister r)  { return  vsrs(r->encoding());}
+  static int vsrt(   VectorSRegister r)  { return  vsrt(r->encoding());}
 
   static int vsplt_uim( int        x)  { return  opp_u_field(x,             15, 12); } // for vsplt* instructions
   static int vsplti_sim(int        x)  { return  opp_u_field(x,             15, 11); } // for vsplti* instructions
@@ -1659,11 +1680,14 @@ class Assembler : public AbstractAssembler {
   // atomics
   inline void lwarx_unchecked(Register d, Register a, Register b, int eh1 = 0);
   inline void ldarx_unchecked(Register d, Register a, Register b, int eh1 = 0);
+  inline void lqarx_unchecked(Register d, Register a, Register b, int eh1 = 0);
   inline bool lxarx_hint_exclusive_access();
   inline void lwarx(  Register d, Register a, Register b, bool hint_exclusive_access = false);
   inline void ldarx(  Register d, Register a, Register b, bool hint_exclusive_access = false);
+  inline void lqarx(  Register d, Register a, Register b, bool hint_exclusive_access = false);
   inline void stwcx_( Register s, Register a, Register b);
   inline void stdcx_( Register s, Register a, Register b);
+  inline void stqcx_( Register s, Register a, Register b);
 
   // Instructions for adjusting thread priority for simultaneous
   // multithreading (SMT) on Power5.
@@ -1834,7 +1858,7 @@ class Assembler : public AbstractAssembler {
   inline void vperm(    VectorRegister d, VectorRegister a, VectorRegister b, VectorRegister c);
   inline void vsel(     VectorRegister d, VectorRegister a, VectorRegister b, VectorRegister c);
   inline void vsl(      VectorRegister d, VectorRegister a, VectorRegister b);
-  inline void vsldoi(   VectorRegister d, VectorRegister a, VectorRegister b, int si4);
+  inline void vsldoi(   VectorRegister d, VectorRegister a, VectorRegister b, int ui4);
   inline void vslo(     VectorRegister d, VectorRegister a, VectorRegister b);
   inline void vsr(      VectorRegister d, VectorRegister a, VectorRegister b);
   inline void vsro(     VectorRegister d, VectorRegister a, VectorRegister b);
@@ -1938,6 +1962,12 @@ class Assembler : public AbstractAssembler {
   inline void mtvscr(   VectorRegister b);
   inline void mfvscr(   VectorRegister d);
 
+  // Vector-Scalar (VSX) instructions.
+  inline void lxvd2x(   VectorSRegister d, Register a, Register b);
+  inline void stxvd2x(  VectorSRegister d, Register a, Register b);
+  inline void mtvrd(    VectorRegister  d, Register a);
+  inline void mfvrd(    Register        a, VectorRegister d);
+
   // AES (introduced with Power 8)
   inline void vcipher(     VectorRegister d, VectorRegister a, VectorRegister b);
   inline void vcipherlast( VectorRegister d, VectorRegister a, VectorRegister b);
@@ -2014,10 +2044,13 @@ class Assembler : public AbstractAssembler {
   // Atomics: use ra0mem to disallow R0 as base.
   inline void lwarx_unchecked(Register d, Register b, int eh1);
   inline void ldarx_unchecked(Register d, Register b, int eh1);
+  inline void lqarx_unchecked(Register d, Register b, int eh1);
   inline void lwarx( Register d, Register b, bool hint_exclusive_access);
   inline void ldarx( Register d, Register b, bool hint_exclusive_access);
+  inline void lqarx( Register d, Register b, bool hint_exclusive_access);
   inline void stwcx_(Register s, Register b);
   inline void stdcx_(Register s, Register b);
+  inline void stqcx_(Register s, Register b);
   inline void lfs(   FloatRegister d, int si16);
   inline void lfsx(  FloatRegister d, Register b);
   inline void lfd(   FloatRegister d, int si16);

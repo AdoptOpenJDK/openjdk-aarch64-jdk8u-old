@@ -767,8 +767,7 @@ bool InstructForm::captures_bottom_type(FormDict &globals) const {
         !strcmp(_matrule->_rChild->_opType,"CheckCastPP")  ||
         !strcmp(_matrule->_rChild->_opType,"GetAndSetP")   ||
         !strcmp(_matrule->_rChild->_opType,"GetAndSetN")   ||
-        !strcmp(_matrule->_rChild->_opType,"ShenandoahReadBarrier") ||
-        !strcmp(_matrule->_rChild->_opType,"ShenandoahWriteBarrier")) )  return true;
+        !strcmp(_matrule->_rChild->_opType,"ShenandoahReadBarrier"))) return true;
   else if ( is_ideal_load() == Form::idealP )                return true;
   else if ( is_ideal_store() != Form::none  )                return true;
 
@@ -907,7 +906,8 @@ void InstructForm::build_components() {
   const char *name;
   const char *kill_name = NULL;
   for (_parameters.reset(); (name = _parameters.iter()) != NULL;) {
-    OperandForm *opForm = (OperandForm*)_localNames[name];
+    OpClassForm *opForm = _localNames[name]->is_opclass();
+    assert(opForm != NULL, "sanity");
 
     Effect* e = NULL;
     {
@@ -924,7 +924,8 @@ void InstructForm::build_components() {
       // complex so simply enforce the restriction during parse.
       if (kill_name != NULL &&
           e->isa(Component::TEMP) && !e->isa(Component::DEF)) {
-        OperandForm* kill = (OperandForm*)_localNames[kill_name];
+        OpClassForm* kill = _localNames[kill_name]->is_opclass();
+        assert(kill != NULL, "sanity");
         globalAD->syntax_err(_linenum, "%s: %s %s must be at the end of the argument list\n",
                              _ident, kill->_ident, kill_name);
       } else if (e->isa(Component::KILL) && !e->isa(Component::USE)) {
@@ -1143,7 +1144,7 @@ const char *InstructForm::mach_base_class(FormDict &globals)  const {
   else if (is_ideal_nop()) {
     return "MachNopNode";
   }
-  else if( is_ideal_membar()) {
+  else if (is_ideal_membar()) {
     return "MachMemBarNode";
   }
   else if (is_mach_constant()) {
@@ -2329,7 +2330,8 @@ void OperandForm::build_components() {
   // Add parameters that "do not appear in match rule".
   const char *name;
   for (_parameters.reset(); (name = _parameters.iter()) != NULL;) {
-    OperandForm *opForm = (OperandForm*)_localNames[name];
+    OpClassForm *opForm = _localNames[name]->is_opclass();
+    assert(opForm != NULL, "sanity");
 
     if ( _components.operand_position(name) == -1 ) {
       _components.insert(name, opForm->_ident, Component::INVALID, false);
@@ -3476,7 +3478,7 @@ int MatchNode::needs_ideal_memory_edge(FormDict &globals) const {
     "ClearArray",
     "GetAndAddI", "GetAndSetI", "GetAndSetP",
     "GetAndAddL", "GetAndSetL", "GetAndSetN",
-    "ShenandoahReadBarrier", "ShenandoahWriteBarrier",
+    "ShenandoahReadBarrier",
   };
   int cnt = sizeof(needs_ideal_memory_list)/sizeof(char*);
   if( strcmp(_opType,"PrefetchRead")==0 ||

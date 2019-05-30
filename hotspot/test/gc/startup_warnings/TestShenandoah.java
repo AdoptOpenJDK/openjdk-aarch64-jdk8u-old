@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat Inc. All rights reserved.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,7 +35,7 @@ import com.oracle.java.testlibrary.ProcessTools;
 public class TestShenandoah {
 
   public static void main(String args[]) throws Exception {
-    ProcessBuilder pb = ProcessTools.createJavaProcessBuilder("-XX:+UseShenandoahGC", "-version");
+    ProcessBuilder pb = ProcessTools.createJavaProcessBuilder("-XX:+UnlockExperimentalVMOptions", "-XX:+UseShenandoahGC", "-version");
     OutputAnalyzer output = new OutputAnalyzer(pb.start());
     output.shouldNotContain("deprecated");
     output.shouldNotContain("error");

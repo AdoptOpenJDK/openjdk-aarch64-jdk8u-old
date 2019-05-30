@@ -1,4 +1,3 @@
-
 /*
 /*
  * Copyright (c) 2013, Red Hat Inc.
@@ -35,7 +34,7 @@
 
 #include "compiler/disassembler.hpp"
 #include "gc_interface/collectedHeap.inline.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
@@ -1434,7 +1433,6 @@ void MacroAssembler::null_check(Register reg, int offset) {
     // provoke OS NULL exception if reg = NULL by
     // accessing M[reg] w/o changing any registers
     // NOTE: this is plenty to provoke a segv
-
     ldr(zr, Address(reg));
   } else {
     // nothing to do, (later) access of M[reg + offset]
@@ -2020,19 +2018,11 @@ void MacroAssembler::verify_heapbase(const char* msg) {
 }
 #endif
 
-void MacroAssembler::stop(const char* msg, Label *l) {
+void MacroAssembler::stop(const char* msg) {
   address ip = pc();
   pusha();
-  // We use movptr rather than mov here because we need code size not
-  // to depend on the pointer value of msg otherwise C2 can observe
-  // the same node with different sizes when emitted in a scratch
-  // buffer and later when emitted for good.
-  movptr(c_rarg0, (uintptr_t)msg);
-  if (! l) {
-    adr(c_rarg1, (address)ip);
-  } else {
-    adr(c_rarg1, *l);
-  }
+  mov(c_rarg0, (address)msg);
+  mov(c_rarg1, (address)ip);
   mov(c_rarg2, sp);
   mov(c_rarg3, CAST_FROM_FN_PTR(address, MacroAssembler::debug64));
   // call(c_rarg3);
@@ -2298,8 +2288,8 @@ static bool different(Register a, RegisterOrConstant b, Register c) {
     return a != b.as_register() && a != c && b.as_register() != c;
 }
 
-#define ATOMIC_OP(LDXR, OP, IOP, AOP, STXR, sz)                         \
-void MacroAssembler::atomic_##OP(Register prev, RegisterOrConstant incr, Register addr) { \
+#define ATOMIC_OP(NAME, LDXR, OP, IOP, AOP, STXR, sz)                   \
+void MacroAssembler::atomic_##NAME(Register prev, RegisterOrConstant incr, Register addr) { \
   if (UseLSE) {                                                         \
     prev = prev->is_valid() ? prev : zr;                                \
     if (incr.is_register()) {                                           \
@@ -2310,16 +2300,16 @@ void MacroAssembler::atomic_##OP(Register prev, RegisterOrConstant incr, Registe
     }                                                                   \
     return;                                                             \
   }                                                                     \
-  Register result = rscratch2;						\
-  if (prev->is_valid())							\
-    result = different(prev, incr, addr) ? prev : rscratch2;		\
-									\
-  Label retry_load;							\
+  Register result = rscratch2;                                          \
+  if (prev->is_valid())                                                 \
+    result = different(prev, incr, addr) ? prev : rscratch2;            \
+                                                                        \
+  Label retry_load;                                                     \
   if ((VM_Version::cpu_cpuFeatures() & VM_Version::CPU_STXR_PREFETCH))         \
     prfm(Address(addr), PSTL1STRM);                                     \
-  bind(retry_load);							\
-  LDXR(result, addr);							\
-  OP(rscratch1, result, incr);						\
+  bind(retry_load);                                                     \
+  LDXR(result, addr);                                                   \
+  OP(rscratch1, result, incr);                                          \
   STXR(rscratch2, rscratch1, addr);                                     \
   cbnzw(rscratch2, retry_load);                                         \
   if (prev->is_valid() && prev != result) {                             \
@@ -2327,35 +2317,39 @@ void MacroAssembler::atomic_##OP(Register prev, RegisterOrConstant incr, Registe
   }                                                                     \
 }
 
-ATOMIC_OP(ldxr, add, sub, ldadd, stxr, Assembler::xword)
-ATOMIC_OP(ldxrw, addw, subw, ldadd, stxrw, Assembler::word)
+ATOMIC_OP(add, ldxr, add, sub, ldadd, stxr, Assembler::xword)
+ATOMIC_OP(addw, ldxrw, addw, subw, ldadd, stxrw, Assembler::word)
+ATOMIC_OP(addal, ldaxr, add, sub, ldaddal, stlxr, Assembler::xword)
+ATOMIC_OP(addalw, ldaxrw, addw, subw, ldaddal, stlxrw, Assembler::word)
 
 #undef ATOMIC_OP
 
-#define ATOMIC_XCHG(OP, LDXR, STXR, sz)                                 \
-void MacroAssembler::atomic_##OP(Register prev, Register newv, Register addr) {	\
+#define ATOMIC_XCHG(OP, AOP, LDXR, STXR, sz)                            \
+void MacroAssembler::atomic_##OP(Register prev, Register newv, Register addr) { \
   if (UseLSE) {                                                         \
     prev = prev->is_valid() ? prev : zr;                                \
-    swp(sz, newv, prev, addr);                                          \
+    AOP(sz, newv, prev, addr);                                          \
     return;                                                             \
   }                                                                     \
-  Register result = rscratch2;						\
-  if (prev->is_valid())							\
-    result = different(prev, newv, addr) ? prev : rscratch2;		\
-									\
-  Label retry_load;							\
+  Register result = rscratch2;                                          \
+  if (prev->is_valid())                                                 \
+    result = different(prev, newv, addr) ? prev : rscratch2;            \
+                                                                        \
+  Label retry_load;                                                     \
   if ((VM_Version::cpu_cpuFeatures() & VM_Version::CPU_STXR_PREFETCH))         \
     prfm(Address(addr), PSTL1STRM);                                     \
-  bind(retry_load);							\
-  LDXR(result, addr);							\
-  STXR(rscratch1, newv, addr);						\
-  cbnzw(rscratch1, retry_load);						\
-  if (prev->is_valid() && prev != result)				\
-    mov(prev, result);							\
+  bind(retry_load);                                                     \
+  LDXR(result, addr);                                                   \
+  STXR(rscratch1, newv, addr);                                          \
+  cbnzw(rscratch1, retry_load);                                         \
+  if (prev->is_valid() && prev != result)                               \
+    mov(prev, result);                                                  \
 }
 
-ATOMIC_XCHG(xchg, ldxr, stxr, Assembler::xword)
-ATOMIC_XCHG(xchgw, ldxrw, stxrw, Assembler::word)
+ATOMIC_XCHG(xchg, swp, ldxr, stxr, Assembler::xword)
+ATOMIC_XCHG(xchgw, swp, ldxrw, stxrw, Assembler::word)
+ATOMIC_XCHG(xchgal, swpal, ldaxr, stlxr, Assembler::xword)
+ATOMIC_XCHG(xchgalw, swpal, ldaxrw, stlxrw, Assembler::word)
 
 #undef ATOMIC_XCHG
 
@@ -2394,7 +2388,6 @@ void MacroAssembler::debug64(char* msg, int64_t pc, int64_t regs[])
       BytecodeCounter::print();
     }
 #endif
-
     if (os::message_box(msg, "Execution stopped, print registers?")) {
       ttyLocker ttyl;
       tty->print_cr(" pc = 0x%016lx", pc);
@@ -3629,6 +3622,12 @@ void MacroAssembler::store_heap_oop_null(Address dst) {
 }
 
 #if INCLUDE_ALL_GCS
+/*
+ * g1_write_barrier_pre -- G1GC pre-write barrier for store of new_val at
+ * store_addr.
+ *
+ * Allocates rscratch1
+ */
 void MacroAssembler::g1_write_barrier_pre(Register obj,
                                           Register pre_val,
                                           Register thread,
@@ -3646,10 +3645,8 @@ void MacroAssembler::g1_write_barrier_pre(Register obj,
   Label done;
   Label runtime;
 
-  assert(pre_val != noreg, "check this code");
-
-  if (obj != noreg)
-    assert_different_registers(obj, pre_val, tmp);
+  assert_different_registers(obj, pre_val, tmp, rscratch1);
+  assert(pre_val != noreg &&  tmp != noreg, "expecting a register");
 
   Address in_progress(thread, in_bytes(JavaThread::satb_mark_queue_offset() +
                                        PtrQueue::byte_offset_of_active()));
@@ -3723,6 +3720,12 @@ void MacroAssembler::g1_write_barrier_pre(Register obj,
   bind(done);
 }
 
+/*
+ * g1_write_barrier_post -- G1GC post-write barrier for store of new_val at
+ * store_addr
+ *
+ * Allocates rscratch1
+ */
 void MacroAssembler::g1_write_barrier_post(Register store_addr,
                                            Register new_val,
                                            Register thread,
@@ -3731,6 +3734,10 @@ void MacroAssembler::g1_write_barrier_post(Register store_addr,
 #ifdef _LP64
   assert(thread == rthread, "must be");
 #endif // _LP64
+  assert_different_registers(store_addr, new_val, thread, tmp, tmp2,
+                             rscratch1);
+  assert(store_addr != noreg && new_val != noreg && tmp != noreg
+         && tmp2 != noreg, "expecting a register");
 
   if (UseShenandoahGC) {
     // No need for this in Shenandoah.
@@ -3822,9 +3829,7 @@ void MacroAssembler::shenandoah_write_barrier(Register dst) {
   br(Assembler::EQ, done);
 
   // Heap is unstable, need to perform the read-barrier even if WB is inactive
-  if (ShenandoahWriteBarrierRB) {
-    ldr(dst, Address(dst, BrooksPointer::byte_offset()));
-  }
+  ldr(dst, Address(dst, ShenandoahBrooksPointer::byte_offset()));
 
   // Check for evacuation-in-progress and jump to WB slow-path if needed
   mov(rscratch2, ShenandoahHeap::EVACUATION);

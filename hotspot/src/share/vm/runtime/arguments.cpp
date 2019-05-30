@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,10 +65,16 @@
 #include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahLogging.hpp"
+#include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
+#include "gc_implementation/shenandoah/shenandoahTaskqueue.hpp"
 #endif // INCLUDE_ALL_GCS
 
 // Note: This is a special bug reporting site for the JVM
-#define DEFAULT_VENDOR_URL_BUG "http://bugreport.java.com/bugreport/crash.jsp"
+#ifdef VENDOR_URL_VM_BUG
+# define DEFAULT_VENDOR_URL_BUG VENDOR_URL_VM_BUG
+#else
+# define DEFAULT_VENDOR_URL_BUG "http://bugreport.java.com/bugreport/crash.jsp"
+#endif
 #define DEFAULT_JAVA_LAUNCHER  "generic"
 
 // Disable options not supported in this release, with a warning if they
@@ -1381,12 +1387,6 @@ void Arguments::set_cms_and_parnew_gc_flags() {
     CFLS_LAB::modify_initialization(OldPLABSize, OldPLABWeight);
   }
 
-  if (!ClassUnloading) {
-    FLAG_SET_CMDLINE(bool, CMSClassUnloadingEnabled, false);
-    FLAG_SET_CMDLINE(bool, ExplicitGCInvokesConcurrentAndUnloadsClasses, false);
-    FLAG_SET_CMDLINE(uintx, ShenandoahUnloadClassesFrequency, 0);
-  }
-
   if (PrintGCDetails && Verbose) {
     tty->print_cr("MarkStackSize: %uk  MarkStackSizeMax: %uk",
       (unsigned int) (MarkStackSize / K), (uint) (MarkStackSizeMax / K));
@@ -1773,6 +1773,22 @@ void Arguments::set_shenandoah_gc_flags() {
   }
 #endif
 
+#if INCLUDE_ALL_GCS
+  if (UseLargePages && (MaxHeapSize / os::large_page_size()) < ShenandoahHeapRegion::MIN_NUM_REGIONS) {
+    warning("Large pages size (" SIZE_FORMAT "K) is too large to afford page-sized regions, disabling uncommit",
+            os::large_page_size() / K);
+    FLAG_SET_DEFAULT(ShenandoahUncommit, false);
+  }
+#endif
+
+  // Enable NUMA by default. While Shenandoah is not NUMA-aware, enabling NUMA makes
+  // storage allocation code NUMA-aware, and NUMA interleaving makes the storage
+  // allocated in consistent manner (interleaving) to minimize run-to-run variance.
+  if (FLAG_IS_DEFAULT(UseNUMA)) {
+    FLAG_SET_DEFAULT(UseNUMA, true);
+    FLAG_SET_DEFAULT(UseNUMAInterleaving, true);
+  }
+
   FLAG_SET_DEFAULT(ParallelGCThreads,
                    Abstract_VM_Version::parallel_worker_threads());
 
@@ -1835,6 +1851,13 @@ void Arguments::set_shenandoah_gc_flags() {
     FLAG_SET_DEFAULT(ShenandoahUncommit, false);
   }
 
+  if ((InitialHeapSize == MaxHeapSize) && ShenandoahUncommit) {
+    if (PrintGC) {
+      tty->print_cr("Min heap equals to max heap, disabling ShenandoahUncommit");
+    }
+    FLAG_SET_DEFAULT(ShenandoahUncommit, false);
+  }
+
   // If class unloading is disabled, no unloading for concurrent cycles as well.
   // If class unloading is enabled, users should opt-in for unloading during
   // concurrent cycles.
@@ -1870,6 +1893,16 @@ void Arguments::set_shenandoah_gc_flags() {
     FLAG_SET_DEFAULT(NodeLimitFudgeFactor, NodeLimitFudgeFactor * 3);
   }
 #endif
+#endif
+
+  // Make sure safepoint deadlocks are failing predictably. This sets up VM to report
+  // fatal error after 10 seconds of wait for safepoint syncronization (not the VM
+  // operation itself). There is no good reason why Shenandoah would spend that
+  // much time synchronizing.
+#ifdef ASSERT
+  FLAG_SET_DEFAULT(SafepointTimeout, true);
+  FLAG_SET_DEFAULT(SafepointTimeoutDelay, 10000);
+  FLAG_SET_DEFAULT(AbortVMOnSafepointTimeout, true);
 #endif
 }
 
@@ -1909,6 +1942,14 @@ void Arguments::set_gc_specific_flags() {
   if (MinHeapFreeRatio == 100) {
     // Keeping the heap 100% free is hard ;-) so limit it to 99%.
     FLAG_SET_ERGO(uintx, MinHeapFreeRatio, 99);
+  }
+
+  // If class unloading is disabled, also disable concurrent class unloading.
+  if (!ClassUnloading) {
+    FLAG_SET_CMDLINE(bool, CMSClassUnloadingEnabled, false);
+    FLAG_SET_CMDLINE(bool, ClassUnloadingWithConcurrentMark, false);
+    FLAG_SET_CMDLINE(bool, ExplicitGCInvokesConcurrentAndUnloadsClasses, false);
+    FLAG_SET_CMDLINE(uintx, ShenandoahUnloadClassesFrequency, 0);
   }
 #else // INCLUDE_ALL_GCS
   assert(verify_serial_gc_flags(), "SerialGC unset");

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012, 2017 SAP AG. All rights reserved.
+ * Copyright (c) 2012, 2017 SAP AG. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -516,6 +516,8 @@ class MacroAssembler: public Assembler {
   void card_write_barrier_post(Register Rstore_addr, Register Rnew_val, Register Rtmp);
   void card_table_write(jbyte* byte_map_base, Register Rtmp, Register Robj);
 
+  void resolve_jobject(Register value, Register tmp1, Register tmp2, bool needs_frame);
+
 #if INCLUDE_ALL_GCS
   // General G1 pre-barrier generator.
   void g1_write_barrier_pre(Register Robj, RegisterOrConstant offset, Register Rpre_val,
@@ -636,6 +638,34 @@ class MacroAssembler: public Assembler {
                           Register tmp5_reg);
   void char_arrays_equalsImm(Register str1_reg, Register str2_reg, int cntval, Register result_reg,
                              Register tmp1_reg, Register tmp2_reg);
+
+  // CRC32 Intrinsics.
+  void load_reverse_32(Register dst, Register src);
+  int  crc32_table_columns(Register table, Register tc0, Register tc1, Register tc2, Register tc3);
+  void fold_byte_crc32(Register crc, Register val, Register table, Register tmp);
+  void fold_8bit_crc32(Register crc, Register table, Register tmp);
+  void update_byte_crc32(Register crc, Register val, Register table);
+  void update_byteLoop_crc32(Register crc, Register buf, Register len, Register table,
+                             Register data, bool loopAlignment, bool invertCRC);
+  void update_1word_crc32(Register crc, Register buf, Register table, int bufDisp, int bufInc,
+                          Register t0,  Register t1,  Register t2,  Register t3,
+                          Register tc0, Register tc1, Register tc2, Register tc3);
+  void kernel_crc32_2word(Register crc, Register buf, Register len, Register table,
+                          Register t0,  Register t1,  Register t2,  Register t3,
+                          Register tc0, Register tc1, Register tc2, Register tc3);
+  void kernel_crc32_1word(Register crc, Register buf, Register len, Register table,
+                          Register t0,  Register t1,  Register t2,  Register t3,
+                          Register tc0, Register tc1, Register tc2, Register tc3);
+  void kernel_crc32_1byte(Register crc, Register buf, Register len, Register table,
+                          Register t0,  Register t1,  Register t2,  Register t3);
+  void kernel_crc32_1word_vpmsumd(Register crc, Register buf, Register len, Register table,
+                          Register constants, Register barretConstants,
+                          Register t0,  Register t1, Register t2, Register t3, Register t4);
+  void kernel_crc32_1word_aligned(Register crc, Register buf, Register len,
+                          Register constants, Register barretConstants,
+                          Register t0, Register t1, Register t2);
+
+  void kernel_crc32_singleByte(Register crc, Register buf, Register len, Register table, Register tmp);
 
   //
   // Debugging

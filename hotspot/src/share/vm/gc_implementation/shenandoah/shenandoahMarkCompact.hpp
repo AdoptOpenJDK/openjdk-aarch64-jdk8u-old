@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2014, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -27,8 +27,6 @@
 #include "gc_implementation/shared/gcTimer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegionSet.hpp"
-
-class HeapWord;
 
 /**
  * This implements Full GC (e.g. when invoking System.gc()) using a mark-compact algorithm.

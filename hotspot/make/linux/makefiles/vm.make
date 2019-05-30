@@ -1,5 +1,5 @@
 #
-# Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -102,7 +102,8 @@ CXXFLAGS =           \
 # This is VERY important! The version define must only be supplied to vm_version.o
 # If not, ccache will not re-use the cache at all, since the version string might contain
 # a time and date.
-CXXFLAGS/vm_version.o += ${JRE_VERSION}
+CXXFLAGS/vm_version.o += ${JRE_VERSION} ${VERSION_CFLAGS}
+CXXFLAGS/arguments.o += ${VERSION_CFLAGS}
 
 CXXFLAGS/BYFILE = $(CXXFLAGS/$@)
 
@@ -122,7 +123,7 @@ CFLAGS += $(CFLAGS/NOEX)
 
 # Extra flags from gnumake's invocation or environment
 CFLAGS += $(EXTRA_CFLAGS)
-LFLAGS += $(EXTRA_CFLAGS)
+LFLAGS += $(EXTRA_CFLAGS) $(EXTRA_LDFLAGS)
 
 # Don't set excutable bit on stack segment
 # the same could be done by separate execstack command
@@ -409,19 +410,23 @@ $(LIBJVM): $(LIBJVM.o) $(LIBJVM_MAPFILE) $(LD_SCRIPT)
 	}
 
 ifeq ($(ENABLE_FULL_DEBUG_SYMBOLS),1)
+  ifneq ($(STRIP_POLICY),no_strip)
 	$(QUIETLY) $(OBJCOPY) --only-keep-debug $@ $(LIBJVM_DEBUGINFO)
 	$(QUIETLY) $(OBJCOPY) --add-gnu-debuglink=$(LIBJVM_DEBUGINFO) $@
+  endif
   ifeq ($(STRIP_POLICY),all_strip)
 	$(QUIETLY) $(STRIP) $@
   else
     ifeq ($(STRIP_POLICY),min_strip)
 	$(QUIETLY) $(STRIP) -g $@
-    # implied else here is no stripping at all
     endif
+    # implied else here is no stripping at all
   endif
-  ifeq ($(ZIP_DEBUGINFO_FILES),1)
+  ifneq ($(STRIP_POLICY),no_strip)
+    ifeq ($(ZIP_DEBUGINFO_FILES),1)
 	$(ZIPEXE) -q -y $(LIBJVM_DIZ) $(LIBJVM_DEBUGINFO)
 	$(RM) $(LIBJVM_DEBUGINFO)
+    endif
   endif
 endif
 

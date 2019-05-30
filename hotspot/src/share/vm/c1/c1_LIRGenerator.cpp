@@ -33,7 +33,7 @@
 #include "ci/ciArrayKlass.hpp"
 #include "ci/ciInstance.hpp"
 #include "ci/ciObjArray.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "utilities/bitMap.inline.hpp"
@@ -1855,7 +1855,7 @@ LIR_Opr LIRGenerator::shenandoah_read_barrier(LIR_Opr obj, CodeEmitInfo* info, b
       __ cmp(lir_cond_equal, result, LIR_OprFact::oopConst(NULL));
       __ branch(lir_cond_equal, T_LONG, done->label());
     }
-    LIR_Address* brooks_ptr_address = generate_address(result, BrooksPointer::byte_offset(), T_ADDRESS);
+    LIR_Address* brooks_ptr_address = generate_address(result, ShenandoahBrooksPointer::byte_offset(), T_ADDRESS);
     __ load(brooks_ptr_address, result, info ? new CodeEmitInfo(info) : NULL, lir_patch_none);
 
     __ branch_destination(done->label());
@@ -2392,6 +2392,10 @@ void LIRGenerator::do_UnsafeGetObject(UnsafeGetObject* x) {
 
       // We can have generate one runtime check here. Let's start with
       // the offset check.
+      // Allocate temp register to src and load it here, otherwise
+      // control flow below may confuse register allocator.
+      LIR_Opr src_reg = new_register(T_OBJECT);
+      __ move(src.result(), src_reg);
       if (gen_offset_check) {
         // if (offset != referent_offset) -> continue
         // If offset is an int then we can do the comparison with the
@@ -2414,14 +2418,14 @@ void LIRGenerator::do_UnsafeGetObject(UnsafeGetObject* x) {
       if (gen_source_check) {
         // offset is a const and equals referent offset
         // if (source == null) -> continue
-        __ cmp(lir_cond_equal, src.result(), LIR_OprFact::oopConst(NULL));
+        __ cmp(lir_cond_equal, src_reg, LIR_OprFact::oopConst(NULL));
         __ branch(lir_cond_equal, T_OBJECT, Lcont->label());
       }
       LIR_Opr src_klass = new_register(T_OBJECT);
       if (gen_type_check) {
         // We have determined that offset == referent_offset && src != null.
         // if (src->_klass->_reference_type == REF_NONE) -> continue
-        __ move(new LIR_Address(src.result(), oopDesc::klass_offset_in_bytes(), T_ADDRESS), src_klass);
+        __ move(new LIR_Address(src_reg, oopDesc::klass_offset_in_bytes(), T_ADDRESS), src_klass);
         LIR_Address* reference_type_addr = new LIR_Address(src_klass, in_bytes(InstanceKlass::reference_type_offset()), T_BYTE);
         LIR_Opr reference_type = new_register(T_INT);
         __ move(reference_type_addr, reference_type);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. All rights reserved.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,10 +22,14 @@
  */
 
 /**
- * @test
+ * @test TestExpandedWBLostNullCheckDep
  * @summary Logic that moves a null check in the expanded barrier may cause a memory access that doesn't depend on the barrier to bypass the null check
+ * @key gc
  * @requires vm.flavor == "server"
- * @run main/othervm -XX:-BackgroundCompilation -XX:-UseOnStackReplacement -XX:-TieredCompilation -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+StressGCM -XX:+StressLCM TestExpandedWBLostNullCheckDep
+ *
+ * @run main/othervm -XX:-BackgroundCompilation -XX:-UseOnStackReplacement -XX:-TieredCompilation
+ *                   -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC
+ *                   -XX:+StressGCM -XX:+StressLCM TestExpandedWBLostNullCheckDep
  */
 
 public class TestExpandedWBLostNullCheckDep {

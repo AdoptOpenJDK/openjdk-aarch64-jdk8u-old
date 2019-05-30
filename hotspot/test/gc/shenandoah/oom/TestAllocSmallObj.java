@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,7 +24,9 @@
 /**
  * @test TestAllocSmallObj
  * @summary Test allocation of small object to result OOM, but not to crash JVM
+ * @key gc
  * @library /testlibrary
+ *
  * @run main TestAllocSmallObj
  */
 
@@ -32,7 +34,7 @@ import com.oracle.java.testlibrary.*;
 
 public class TestAllocSmallObj {
 
-    static final int COUNT = 16*1024*1024;
+    static final int COUNT = 16 * 1024 * 1024;
 
     static volatile Object sink;
 
@@ -52,10 +54,11 @@ public class TestAllocSmallObj {
 
         {
             ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
-                                    "-Xmx16m",
-                                    "-XX:+UseShenandoahGC",
-                                    TestAllocSmallObj.class.getName(),
-                                    "test");
+                    "-Xmx16m",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    TestAllocSmallObj.class.getName(),
+                    "test");
 
             OutputAnalyzer analyzer = new OutputAnalyzer(pb.start());
             analyzer.shouldHaveExitValue(1);
@@ -64,10 +67,11 @@ public class TestAllocSmallObj {
 
         {
             ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
-                                    "-Xmx1g",
-                                    "-XX:+UseShenandoahGC",
-                                    TestAllocSmallObj.class.getName(),
-                                    "test");
+                    "-Xmx1g",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    TestAllocSmallObj.class.getName(),
+                    "test");
 
             OutputAnalyzer analyzer = new OutputAnalyzer(pb.start());
             analyzer.shouldHaveExitValue(0);

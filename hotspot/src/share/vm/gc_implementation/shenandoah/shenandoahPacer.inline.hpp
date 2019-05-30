@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -25,6 +25,7 @@
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHPACER_INLINE_HPP
 
 #include "gc_implementation/shenandoah/shenandoahPacer.hpp"
+#include "runtime/atomic.hpp"
 
 inline void ShenandoahPacer::report_mark(size_t words) {
   report_internal(words);

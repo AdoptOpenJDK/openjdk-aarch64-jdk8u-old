@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -25,9 +25,8 @@
 #define SHARE_VM_GC_SHENANDOAH_HEURISTICS_SHENANDOAHPASSIVEHEURISTICS_HPP
 
 #include "gc_implementation/shenandoah/shenandoahHeuristics.hpp"
-#include "gc_implementation/shenandoah/heuristics/shenandoahAdaptiveHeuristics.hpp"
 
-class ShenandoahPassiveHeuristics : public ShenandoahAdaptiveHeuristics {
+class ShenandoahPassiveHeuristics : public ShenandoahHeuristics {
 public:
   ShenandoahPassiveHeuristics();
 
@@ -38,6 +37,10 @@ public:
   virtual bool should_unload_classes();
 
   virtual bool should_degenerate_cycle();
+
+  virtual void choose_collection_set_from_regiondata(ShenandoahCollectionSet* set,
+                                                     RegionData* data, size_t data_size,
+                                                     size_t free);
 
   virtual const char* name();
 

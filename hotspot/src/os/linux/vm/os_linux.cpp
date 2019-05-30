@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -136,6 +136,7 @@ uintptr_t os::Linux::_initial_thread_stack_size   = 0;
 
 int (*os::Linux::_clock_gettime)(clockid_t, struct timespec *) = NULL;
 int (*os::Linux::_pthread_getcpuclockid)(pthread_t, clockid_t *) = NULL;
+int (*os::Linux::_pthread_setname_np)(pthread_t, const char*) = NULL;
 Mutex* os::Linux::_createThread_lock = NULL;
 pthread_t os::Linux::_main_thread;
 int os::Linux::_page_size = -1;
@@ -724,6 +725,10 @@ static void _expand_stack_to(address bottom) {
   }
 }
 
+void os::Linux::expand_stack_to(address bottom) {
+  _expand_stack_to(bottom);
+}
+
 bool os::Linux::manually_expand_stack(JavaThread * t, address addr) {
   assert(t!=NULL, "just checking");
   assert(t->osthread()->expanding_stack(), "expand should be set");
@@ -996,8 +1001,8 @@ bool os::create_attached_thread(JavaThread* thread) {
     }
   }
 
-  if (os::Linux::is_initial_thread()) {
-    // If current thread is initial thread, its stack is mapped on demand,
+  if (os::is_primordial_thread()) {
+    // If current thread is primordial thread, its stack is mapped on demand,
     // see notes about MAP_GROWSDOWN. Here we try to force kernel to map
     // the entire stack region to avoid SEGV in stack banging.
     // It is also useful to get around the heap-stack-gap problem on SuSE
@@ -1082,21 +1087,24 @@ extern "C" Thread* get_thread() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// initial thread
+// primordial thread
 
-// Check if current thread is the initial thread, similar to Solaris thr_main.
-bool os::Linux::is_initial_thread(void) {
+// Check if current thread is the primordial thread, similar to Solaris thr_main.
+bool os::is_primordial_thread(void) {
   char dummy;
   // If called before init complete, thread stack bottom will be null.
   // Can be called if fatal error occurs before initialization.
-  if (initial_thread_stack_bottom() == NULL) return false;
-  assert(initial_thread_stack_bottom() != NULL &&
-         initial_thread_stack_size()   != 0,
-         "os::init did not locate initial thread's stack region");
-  if ((address)&dummy >= initial_thread_stack_bottom() &&
-      (address)&dummy < initial_thread_stack_bottom() + initial_thread_stack_size())
+  if (os::Linux::initial_thread_stack_bottom() == NULL) return false;
+  assert(os::Linux::initial_thread_stack_bottom() != NULL &&
+         os::Linux::initial_thread_stack_size()   != 0,
+         "os::init did not locate primordial thread's stack region");
+  if ((address)&dummy >= os::Linux::initial_thread_stack_bottom() &&
+      (address)&dummy < os::Linux::initial_thread_stack_bottom() +
+                        os::Linux::initial_thread_stack_size()) {
        return true;
-  else return false;
+  } else {
+       return false;
+  }
 }
 
 // Find the virtual memory area that contains addr
@@ -1123,7 +1131,7 @@ static bool find_vma(address addr, address* vma_low, address* vma_high) {
   return false;
 }
 
-// Locate initial thread stack. This special handling of initial thread stack
+// Locate primordial thread stack. This special handling of primordial thread stack
 // is needed because pthread_getattr_np() on most (all?) Linux distros returns
 // bogus value for the primordial process thread. While the launcher has created
 // the VM in a new thread since JDK 6, we still have to allow for the use of the
@@ -1147,7 +1155,10 @@ void os::Linux::capture_initial_stack(size_t max_size) {
   // 6308388: a bug in ld.so will relocate its own .data section to the
   //   lower end of primordial stack; reduce ulimit -s value a little bit
   //   so we won't install guard page on ld.so's data section.
-  stack_size -= 2 * page_size();
+  //   But ensure we don't underflow the stack size - allow 1 page spare
+  if (stack_size >= (size_t)(3 * page_size())) {
+    stack_size -= 2 * page_size();
+  }
 
   // Try to figure out where the stack base (top) is. This is harder.
   //
@@ -1268,16 +1279,16 @@ void os::Linux::capture_initial_stack(size_t max_size) {
 
       if (i != 28 - 2) {
          assert(false, "Bad conversion from /proc/self/stat");
-         // product mode - assume we are the initial thread, good luck in the
+         // product mode - assume we are the primordial thread, good luck in the
          // embedded case.
-         warning("Can't detect initial thread stack location - bad conversion");
+         warning("Can't detect primordial thread stack location - bad conversion");
          stack_start = (uintptr_t) &rlim;
       }
     } else {
       // For some reason we can't open /proc/self/stat (for example, running on
       // FreeBSD with a Linux emulator, or inside chroot), this should work for
       // most cases, so don't abort:
-      warning("Can't detect initial thread stack location - no /proc/self/stat");
+      warning("Can't detect primordial thread stack location - no /proc/self/stat");
       stack_start = (uintptr_t) &rlim;
     }
   }
@@ -1297,7 +1308,7 @@ void os::Linux::capture_initial_stack(size_t max_size) {
     stack_top = (uintptr_t)high;
   } else {
     // failed, likely because /proc/self/maps does not exist
-    warning("Can't detect initial thread stack location - find_vma failed");
+    warning("Can't detect primordial thread stack location - find_vma failed");
     // best effort: stack_start is normally within a few pages below the real
     // stack top, use it as stack top, and reduce stack size so we won't put
     // guard page outside stack.
@@ -1958,7 +1969,7 @@ void * os::dll_load(const char *filename, char *ebuf, int ebuflen)
     {EM_SPARCV9,     EM_SPARCV9, ELFCLASS64, ELFDATA2MSB, (char*)"Sparc v9 64"},
     {EM_PPC,         EM_PPC,     ELFCLASS32, ELFDATA2MSB, (char*)"Power PC 32"},
 #if defined(VM_LITTLE_ENDIAN)
-    {EM_PPC64,       EM_PPC64,   ELFCLASS64, ELFDATA2LSB, (char*)"Power PC 64"},
+    {EM_PPC64,       EM_PPC64,   ELFCLASS64, ELFDATA2LSB, (char*)"Power PC 64 LE"},
 #else
     {EM_PPC64,       EM_PPC64,   ELFCLASS64, ELFDATA2MSB, (char*)"Power PC 64"},
 #endif
@@ -3180,11 +3191,11 @@ address get_stack_commited_bottom(address bottom, size_t size) {
 // where we're going to put our guard pages, truncate the mapping at
 // that point by munmap()ping it.  This ensures that when we later
 // munmap() the guard pages we don't leave a hole in the stack
-// mapping. This only affects the main/initial thread
+// mapping. This only affects the main/primordial thread
 
 bool os::pd_create_stack_guard_pages(char* addr, size_t size) {
 
-  if (os::Linux::is_initial_thread()) {
+  if (os::is_primordial_thread()) {
     // As we manually grow stack up to bottom inside create_attached_thread(),
     // it's likely that os::Linux::initial_thread_stack_bottom is mapped and
     // we don't need to do anything special.
@@ -3209,14 +3220,14 @@ bool os::pd_create_stack_guard_pages(char* addr, size_t size) {
 
 // If this is a growable mapping, remove the guard pages entirely by
 // munmap()ping them.  If not, just call uncommit_memory(). This only
-// affects the main/initial thread, but guard against future OS changes
-// It's safe to always unmap guard pages for initial thread because we
-// always place it right after end of the mapped region
+// affects the main/primordial thread, but guard against future OS changes.
+// It's safe to always unmap guard pages for primordial thread because we
+// always place it right after end of the mapped region.
 
 bool os::remove_stack_guard_pages(char* addr, size_t size) {
   uintptr_t stack_extent, stack_base;
 
-  if (os::Linux::is_initial_thread()) {
+  if (os::is_primordial_thread()) {
     return ::munmap(addr, size) == 0;
   }
 
@@ -4991,10 +5002,9 @@ const char* os::exception_name(int exception_code, char* buf, size_t size) {
   }
 }
 
-// this is called _before_ the most of global arguments have been parsed
+// this is called _before_ most of the global arguments have been parsed
 void os::init(void) {
   char dummy;   /* used to get a guess on initial stack address */
-//  first_hrtime = gethrtime();
 
   // With LinuxThreads the JavaMain thread pid (primordial thread)
   // is different than the pid of the java launcher thread.
@@ -5021,7 +5031,7 @@ void os::init(void) {
 
   Linux::initialize_system_info();
 
-  // main_thread points to the aboriginal thread
+  // _main_thread points to the thread that created/loaded the JVM.
   Linux::_main_thread = pthread_self();
 
   Linux::clock_init();
@@ -5056,6 +5066,11 @@ void os::init(void) {
     StackRedPages = 1;
     StackShadowPages = round_to((StackShadowPages*Linux::vm_default_page_size()), vm_page_size()) / vm_page_size();
   }
+
+  // retrieve entry point for pthread_setname_np
+  Linux::_pthread_setname_np =
+    (int(*)(pthread_t, const char*))dlsym(RTLD_DEFAULT, "pthread_setname_np");
+
 }
 
 // To install functions for atexit system call
@@ -5310,8 +5325,14 @@ int os::active_processor_count() {
 }
 
 void os::set_native_thread_name(const char *name) {
-  // Not yet implemented.
-  return;
+  if (Linux::_pthread_setname_np) {
+    char buf [16]; // according to glibc manpage, 16 chars incl. '/0'
+    snprintf(buf, sizeof(buf), "%s", name);
+    buf[sizeof(buf) - 1] = '\0';
+    const int rc = Linux::_pthread_setname_np(pthread_self(), buf);
+    // ERANGE should not happen; all other errors should just be ignored.
+    assert(rc != ERANGE, "pthread_setname_np failed");
+  }
 }
 
 bool os::distribute_processes(uint length, uint* distribution) {
@@ -6339,10 +6360,16 @@ extern char** environ;
 // or -1 on failure (e.g. can't fork a new process).
 // Unlike system(), this function can be called from signal handler. It
 // doesn't block SIGINT et al.
-int os::fork_and_exec(char* cmd) {
+int os::fork_and_exec(char* cmd, bool use_vfork_if_available) {
   const char * argv[4] = {"sh", "-c", cmd, NULL};
 
-  pid_t pid = fork();
+  pid_t pid ;
+
+  if (use_vfork_if_available) {
+    pid = vfork();
+  } else {
+    pid = fork();
+  }
 
   if (pid < 0) {
     // fork failed

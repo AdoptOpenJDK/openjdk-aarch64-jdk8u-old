@@ -27,7 +27,7 @@
 #include "gc_implementation/g1/g1SATBCardTableModRefBS.hpp"
 #include "gc_implementation/g1/heapRegion.hpp"
 #include "gc_interface/collectedHeap.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "memory/barrierSet.hpp"
 #include "memory/cardTableModRefBS.hpp"
@@ -4253,10 +4253,6 @@ Node* GraphKit::shenandoah_read_barrier(Node* obj) {
 
 Node* GraphKit::shenandoah_read_barrier_storeval(Node* obj) {
   return shenandoah_read_barrier_impl(obj, true, false, false);
-}
-
-Node* GraphKit::shenandoah_read_barrier_acmp(Node* obj) {
-  return shenandoah_read_barrier_impl(obj, true, true, false);
 }
 
 Node* GraphKit::shenandoah_read_barrier_impl(Node* obj, bool use_ctrl, bool use_mem, bool allow_fromspace) {

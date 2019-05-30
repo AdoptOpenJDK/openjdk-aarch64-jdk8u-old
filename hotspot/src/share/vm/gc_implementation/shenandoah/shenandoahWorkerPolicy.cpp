@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -35,6 +35,7 @@ uint ShenandoahWorkerPolicy::_prev_degengc         = 0;
 uint ShenandoahWorkerPolicy::_prev_conc_update_ref = 0;
 uint ShenandoahWorkerPolicy::_prev_par_update_ref  = 0;
 uint ShenandoahWorkerPolicy::_prev_conc_cleanup    = 0;
+uint ShenandoahWorkerPolicy::_prev_conc_reset      = 0;
 
 uint ShenandoahWorkerPolicy::calc_workers_for_init_marking() {
   uint active_workers = (_prev_par_marking == 0) ? ParallelGCThreads : _prev_par_marking;
@@ -111,7 +112,8 @@ uint ShenandoahWorkerPolicy::calc_workers_for_stw_degenerated() {
 }
 
 uint ShenandoahWorkerPolicy::calc_workers_for_conc_preclean() {
-  return _prev_conc_marking;
+  // Precleaning is single-threaded
+  return 1;
 }
 
 uint ShenandoahWorkerPolicy::calc_workers_for_conc_cleanup() {
@@ -121,4 +123,13 @@ uint ShenandoahWorkerPolicy::calc_workers_for_conc_cleanup() {
                                                        active_workers,
                                                        Threads::number_of_non_daemon_threads());
   return _prev_conc_cleanup;
+}
+
+uint ShenandoahWorkerPolicy::calc_workers_for_conc_reset() {
+  uint active_workers = (_prev_conc_reset == 0) ? ConcGCThreads : _prev_conc_reset;
+  _prev_conc_reset =
+          AdaptiveSizePolicy::calc_active_conc_workers(ConcGCThreads,
+                                                       active_workers,
+                                                       Threads::number_of_non_daemon_threads());
+  return _prev_conc_reset;
 }

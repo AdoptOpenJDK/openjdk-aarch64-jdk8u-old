@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,7 @@
 #include "compiler/compileLog.hpp"
 #include "compiler/disassembler.hpp"
 #include "compiler/oopMap.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "opto/addnode.hpp"
 #include "opto/block.hpp"
 #include "opto/c2compiler.hpp"
@@ -1456,7 +1456,7 @@ const TypePtr *Compile::flatten_alias_type( const TypePtr *tj ) const {
         tj = TypeInstPtr::MARK;
         ta = TypeAryPtr::RANGE; // generic ignored junk
         ptr = TypePtr::BotPTR;
-      } else if (offset == BrooksPointer::byte_offset() && UseShenandoahGC) {
+      } else if (offset == ShenandoahBrooksPointer::byte_offset() && UseShenandoahGC) {
         // Need to distinguish brooks ptr as is.
         tj = ta = TypeAryPtr::make(ptr,ta->ary(),ta->klass(),false,offset);
       } else {                  // Random constant offset into array body
@@ -1523,7 +1523,7 @@ const TypePtr *Compile::flatten_alias_type( const TypePtr *tj ) const {
       if (!is_known_inst) { // Do it only for non-instance types
         tj = to = TypeInstPtr::make(TypePtr::BotPTR, env()->Object_klass(), false, NULL, offset);
       }
-    } else if ((offset != BrooksPointer::byte_offset() || !UseShenandoahGC) && (offset < 0 || offset >= k->size_helper() * wordSize)) {
+    } else if ((offset != ShenandoahBrooksPointer::byte_offset() || !UseShenandoahGC) && (offset < 0 || offset >= k->size_helper() * wordSize)) {
       // Static fields are in the space above the normal instance
       // fields in the java.lang.Class instance.
       if (to->klass() != ciEnv::current()->Class_klass()) {
@@ -1622,7 +1622,7 @@ const TypePtr *Compile::flatten_alias_type( const TypePtr *tj ) const {
           (offset == oopDesc::mark_offset_in_bytes() && tj->base() == Type::AryPtr) ||
           (offset == oopDesc::klass_offset_in_bytes() && tj->base() == Type::AryPtr) ||
           (offset == arrayOopDesc::length_offset_in_bytes() && tj->base() == Type::AryPtr) ||
-          (offset == BrooksPointer::byte_offset() && tj->base() == Type::AryPtr && UseShenandoahGC),
+          (offset == ShenandoahBrooksPointer::byte_offset() && tj->base() == Type::AryPtr && UseShenandoahGC),
           "For oops, klasses, raw offset must be constant; for arrays the offset is never known" );
   assert( tj->ptr() != TypePtr::TopPTR &&
           tj->ptr() != TypePtr::AnyNull &&
@@ -1734,16 +1734,23 @@ Compile::AliasType* Compile::find_alias_type(const TypePtr* adr_type, bool no_cr
   const TypePtr* flat = flatten_alias_type(adr_type);
 
 #ifdef ASSERT
-  assert(flat == flatten_alias_type(flat), "idempotent");
-  assert(flat != TypePtr::BOTTOM,     "cannot alias-analyze an untyped ptr");
-  if (flat->isa_oopptr() && !flat->isa_klassptr()) {
-    const TypeOopPtr* foop = flat->is_oopptr();
-    // Scalarizable allocations have exact klass always.
-    bool exact = !foop->klass_is_exact() || foop->is_known_instance();
-    const TypePtr* xoop = foop->cast_to_exactness(exact)->is_ptr();
-    assert(foop == flatten_alias_type(xoop), "exactness must not affect alias type");
+  {
+    ResourceMark rm;
+    assert(flat == flatten_alias_type(flat),
+           err_msg("not idempotent: adr_type = %s; flat = %s => %s", Type::str(adr_type),
+                   Type::str(flat), Type::str(flatten_alias_type(flat))));
+    assert(flat != TypePtr::BOTTOM,
+           err_msg("cannot alias-analyze an untyped ptr: adr_type = %s", Type::str(adr_type)));
+    if (flat->isa_oopptr() && !flat->isa_klassptr()) {
+      const TypeOopPtr* foop = flat->is_oopptr();
+      // Scalarizable allocations have exact klass always.
+      bool exact = !foop->klass_is_exact() || foop->is_known_instance();
+      const TypePtr* xoop = foop->cast_to_exactness(exact)->is_ptr();
+      assert(foop == flatten_alias_type(xoop),
+             err_msg("exactness must not affect alias type: foop = %s; xoop = %s",
+                     Type::str(foop), Type::str(xoop)));
+    }
   }
-  assert(flat == flatten_alias_type(flat), "exact bit doesn't matter");
 #endif
 
   int idx = AliasIdxTop;
@@ -2462,8 +2469,8 @@ void Compile::Code_Gen() {
   print_method(PHASE_FINAL_CODE);
 
   // He's dead, Jim.
-  _cfg     = (PhaseCFG*)0xdeadbeef;
-  _regalloc = (PhaseChaitin*)0xdeadbeef;
+  _cfg     = (PhaseCFG*)((intptr_t)0xdeadbeef);
+  _regalloc = (PhaseChaitin*)((intptr_t)0xdeadbeef);
 }
 
 
@@ -3599,7 +3606,7 @@ void Compile::verify_graph_edges(bool no_dead_code) {
     _root->verify_edges(visited);
     if (no_dead_code) {
       // Now make sure that no visited node is used by an unvisited node.
-      bool dead_nodes = 0;
+      bool dead_nodes = false;
       Unique_Node_List checked(area);
       while (visited.size() > 0) {
         Node* n = visited.pop();
@@ -3610,14 +3617,16 @@ void Compile::verify_graph_edges(bool no_dead_code) {
           if (visited.member(use))  continue;  // already in the graph
           if (use->is_Con())        continue;  // a dead ConNode is OK
           // At this point, we have found a dead node which is DU-reachable.
-          if (dead_nodes++ == 0)
+          if (!dead_nodes) {
             tty->print_cr("*** Dead nodes reachable via DU edges:");
+            dead_nodes = true;
+          }
           use->dump(2);
           tty->print_cr("---");
           checked.push(use);  // No repeats; pretend it is now checked.
         }
       }
-      assert(dead_nodes == 0, "using nodes must be reachable from root");
+      assert(!dead_nodes, "using nodes must be reachable from root");
     }
   }
 }
@@ -3663,7 +3672,9 @@ void Compile::verify_barriers() {
             if (cmp->Opcode() == Op_CmpI && cmp->in(2)->is_Con() && cmp->in(2)->bottom_type()->is_int()->get_con() == 0
                 && cmp->in(1)->is_Load()) {
               LoadNode* load = cmp->in(1)->as_Load();
-              if (load->is_g1_marking_load()) {
+              if (load->Opcode() == Op_LoadB && load->in(2)->is_AddP() && load->in(2)->in(2)->Opcode() == Op_ThreadLocal
+                  && load->in(2)->in(3)->is_Con()
+                  && load->in(2)->in(3)->bottom_type()->is_intptr_t()->get_con() == marking_offset) {
 
                 Node* if_ctrl = iff->in(0);
                 Node* load_ctrl = load->in(0);

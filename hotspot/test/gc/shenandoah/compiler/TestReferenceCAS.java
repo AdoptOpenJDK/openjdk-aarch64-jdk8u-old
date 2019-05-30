@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,26 +22,24 @@
  */
 
 /*
- * @test Shenandoah reference CAS test
+ * @test TestReferenceCAS
+ * @summary Shenandoah reference CAS test
+ * @key gc
  *
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC                                                 TestReferenceCAS
- * @run testng/othervm -Diters=100   -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -Xint                                           TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-TieredCompilation                          TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:TieredStopAtLevel=1                         TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:TieredStopAtLevel=4                         TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC                                                 TestReferenceCAS
+ * @run main/othervm -Diters=100   -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -Xint                                           TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-TieredCompilation                          TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:TieredStopAtLevel=1                         TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:TieredStopAtLevel=4                         TestReferenceCAS
  *
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops                          TestReferenceCAS
- * @run testng/othervm -Diters=100   -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -Xint                    TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:-TieredCompilation   TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:TieredStopAtLevel=1  TestReferenceCAS
- * @run testng/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:TieredStopAtLevel=4  TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops                          TestReferenceCAS
+ * @run main/othervm -Diters=100   -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -Xint                    TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:-TieredCompilation   TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:TieredStopAtLevel=1  TestReferenceCAS
+ * @run main/othervm -Diters=20000 -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:ShenandoahGCHeuristics=aggressive -XX:+UseShenandoahGC -XX:-UseCompressedOops -XX:TieredStopAtLevel=4  TestReferenceCAS
  */
 
-import org.testng.annotations.Test;
-
 import java.lang.reflect.Field;
-
-import static org.testng.Assert.*;
 
 public class TestReferenceCAS {
 
@@ -70,8 +68,19 @@ public class TestReferenceCAS {
 
     Object v;
 
-    @Test
-    public void testFieldInstance() {
+    private static void assertEquals(boolean a, boolean b, String msg) {
+        if (a != b) {
+            throw new RuntimeException("a (" + a + ") != b (" + b + "): " + msg);
+        }
+    }
+
+    private static void assertEquals(Object a, Object b, String msg) {
+        if (!a.equals(b)) {
+            throw new RuntimeException("a (" + a.toString() + ") != b (" + b.toString() + "): " + msg);
+        }
+    }
+
+    public static void main(String[] args) {
         TestReferenceCAS t = new TestReferenceCAS();
         for (int c = 0; c < ITERS; c++) {
             testAccess(t, V_OFFSET);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. All rights reserved.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,9 +22,14 @@
  */
 
 /**
- * @test
+ * @test TestWriteBarrierClearControl
  * @summary Clearing control during final graph reshape causes memory barrier to loose dependency on null check
- * @run main/othervm -XX:+IgnoreUnrecognizedVMOptions -XX:-BackgroundCompilation -XX:-UseOnStackReplacement -XX:+UseShenandoahGC -XX:-TieredCompilation -XX:+UnlockDiagnosticVMOptions -XX:+StressLCM -XX:+StressGCM TestWriteBarrierClearControl
+ * @key gc
+ *
+ * @run main/othervm -XX:+IgnoreUnrecognizedVMOptions -XX:-BackgroundCompilation -XX:-UseOnStackReplacement -XX:-TieredCompilation
+ *                   -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC
+ *                   -XX:+UnlockDiagnosticVMOptions -XX:+StressLCM -XX:+StressGCM
+ *                   TestWriteBarrierClearControl
  *
  */
 public class TestWriteBarrierClearControl {
@@ -50,10 +55,10 @@ public class TestWriteBarrierClearControl {
         }
         try {
             test1(null);
-        } catch(NullPointerException npe) {}
+        } catch (NullPointerException npe) {}
         fo = null;
         try {
             test2();
-        } catch(NullPointerException npe) {}
+        } catch (NullPointerException npe) {}
     }
 }

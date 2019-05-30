@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -728,7 +728,6 @@ void InterpreterMacroAssembler::lock_object(Register lock_reg) {
     assert(lock_offset == 0,
            "displached header must be first word in BasicObjectLock");
 
-    // obj_reg has been checked a few lines up.
     if (os::is_MP()) lock();
     cmpxchgptr(lock_reg, Address(obj_reg, 0));
     if (PrintBiasedLockingStatistics) {
@@ -1507,5 +1506,7 @@ void InterpreterMacroAssembler::increment_mask_and_jump(Address counter_addr,
   incrementl(scratch, increment);
   movl(counter_addr, scratch);
   andl(scratch, mask);
-  jcc(cond, *where);
+  if (where != NULL) {
+    jcc(cond, *where);
+  }
 }

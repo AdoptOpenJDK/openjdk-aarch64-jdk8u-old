@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,7 +24,6 @@
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHHEAPLOCK_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHHEAPLOCK_HPP
 
-#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "memory/allocation.hpp"
 #include "runtime/thread.hpp"
 

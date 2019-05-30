@@ -211,15 +211,20 @@ const int NANOUNITS     = 1000000000;   // nano units per base unit
 const jlong NANOSECS_PER_SEC      = CONST64(1000000000);
 const jint  NANOSECS_PER_MILLISEC = 1000000;
 
+// Proper units routines try to maintain at least three significant digits.
+// In worst case, it would print five significant digits with lower prefix.
+// G is close to MAX_SIZE on 32-bit platforms, so its product can easily overflow,
+// and therefore we need to be careful.
+
 inline const char* proper_unit_for_byte_size(size_t s) {
 #ifdef _LP64
-  if (s >= 10*G) {
+  if (s >= 100*G) {
     return "G";
   }
 #endif
-  if (s >= 10*M) {
+  if (s >= 100*M) {
     return "M";
-  } else if (s >= 10*K) {
+  } else if (s >= 100*K) {
     return "K";
   } else {
     return "B";
@@ -229,13 +234,13 @@ inline const char* proper_unit_for_byte_size(size_t s) {
 template <class T>
 inline T byte_size_in_proper_unit(T s) {
 #ifdef _LP64
-  if (s >= 10*G) {
+  if (s >= 100*G) {
     return (T)(s/G);
   }
 #endif
-  if (s >= 10*M) {
+  if (s >= 100*M) {
     return (T)(s/M);
-  } else if (s >= 10*K) {
+  } else if (s >= 100*K) {
     return (T)(s/K);
   } else {
     return s;
@@ -327,7 +332,7 @@ inline size_t pointer_delta(const MetaWord* left, const MetaWord* right) {
 // so far from the middle of the road that it is likely to be problematic in
 // many C++ compilers.
 //
-#define CAST_TO_FN_PTR(func_type, value) ((func_type)(castable_address(value)))
+#define CAST_TO_FN_PTR(func_type, value) (reinterpret_cast<func_type>(value))
 #define CAST_FROM_FN_PTR(new_type, func_ptr) ((new_type)((address_word)(func_ptr)))
 
 // Unsigned byte types for os and stream.hpp
@@ -1046,8 +1051,8 @@ extern void basic_fatal(const char* msg);
 // Special constants for debugging
 
 const jint     badInt           = -3;                       // generic "bad int" value
-const long     badAddressVal    = -2;                       // generic "bad address" value
-const long     badOopVal        = -1;                       // generic "bad oop" value
+const intptr_t badAddressVal    = -2;                       // generic "bad address" value
+const intptr_t badOopVal        = -1;                       // generic "bad oop" value
 const intptr_t badHeapOopVal    = (intptr_t) CONST64(0x2BAD4B0BBAADBABE); // value used to zap heap after GC
 const int      badHandleValue   = 0xBC;                     // value used to zap vm handle area
 const int      badResourceValue = 0xAB;                     // value used to zap resource area
@@ -1144,10 +1149,10 @@ inline bool is_power_of_2_long(jlong x) {
 
 //* largest i such that 2^i <= x
 //  A negative value of 'x' will return '31'
-inline int log2_intptr(intptr_t x) {
+inline int log2_intptr(uintptr_t x) {
   int i = -1;
   uintptr_t p =  1;
-  while (p != 0 && p <= (uintptr_t)x) {
+  while (p != 0 && p <= x) {
     // p = 2^(i+1) && p <= x (i.e., 2^(i+1) <= x)
     i++; p *= 2;
   }
@@ -1157,17 +1162,37 @@ inline int log2_intptr(intptr_t x) {
 }
 
 //* largest i such that 2^i <= x
-//  A negative value of 'x' will return '63'
-inline int log2_long(jlong x) {
+inline int log2_long(julong x) {
   int i = -1;
   julong p =  1;
-  while (p != 0 && p <= (julong)x) {
+  while (p != 0 && p <= x) {
     // p = 2^(i+1) && p <= x (i.e., 2^(i+1) <= x)
     i++; p *= 2;
   }
   // p = 2^(i+1) && x < p (i.e., 2^i <= x < 2^(i+1))
   // (if p = 0 then overflow occurred and i = 63)
   return i;
+}
+
+inline int log2_intptr(intptr_t x) {
+  return log2_intptr((uintptr_t)x);
+}
+
+inline int log2_int(int x) {
+  return log2_intptr((uintptr_t)x);
+}
+
+inline int log2_jint(jint x) {
+  return log2_intptr((uintptr_t)x);
+}
+
+inline int log2_uint(uint x) {
+  return log2_intptr((uintptr_t)x);
+}
+
+//  A negative value of 'x' will return '63'
+inline int log2_jlong(jlong x) {
+  return log2_long((julong)x);
 }
 
 //* the argument must be exactly a power of 2
@@ -1208,6 +1233,29 @@ inline intptr_t round_down(intptr_t x, uintx s) {
 
 inline bool is_odd (intx x) { return x & 1;      }
 inline bool is_even(intx x) { return !is_odd(x); }
+
+// abs methods which cannot overflow and so are well-defined across
+// the entire domain of integer types.
+static inline unsigned int uabs(unsigned int n) {
+  union {
+    unsigned int result;
+    int value;
+  };
+  result = n;
+  if (value < 0) result = 0-result;
+  return result;
+}
+static inline julong uabs(julong n) {
+  union {
+    julong result;
+    jlong value;
+  };
+  result = n;
+  if (value < 0) result = 0-result;
+  return result;
+}
+static inline julong uabs(jlong n) { return uabs((julong)n); }
+static inline unsigned int uabs(int n) { return uabs((unsigned int)n); }
 
 // "to" should be greater than "from."
 inline intx byte_size(void* from, void* to) {
@@ -1364,9 +1412,9 @@ inline intptr_t p2i(const void * p) {
 #define INT64_FORMAT           "%" PRId64
 #define UINT64_FORMAT          "%" PRIu64
 #define UINT64_FORMAT_X        "%" PRIx64
-#define UINT64_FORMAT_HEX_W(width) "%" #width PRIx64
 #define INT64_FORMAT_W(width)  "%" #width PRId64
 #define UINT64_FORMAT_W(width) "%" #width PRIu64
+#define UINT64_FORMAT_X_W(width) "%" #width PRIx64
 
 #define PTR64_FORMAT           "0x%016" PRIx64
 
@@ -1412,6 +1460,32 @@ inline intptr_t p2i(const void * p) {
 
 #define ARRAY_SIZE(array) (sizeof(array)/sizeof((array)[0]))
 
+//----------------------------------------------------------------------------------------------------
+// Sum and product which can never overflow: they wrap, just like the
+// Java operations.  Note that we don't intend these to be used for
+// general-purpose arithmetic: their purpose is to emulate Java
+// operations.
+
+// The goal of this code to avoid undefined or implementation-defined
+// behaviour.  The use of an lvalue to reference cast is explicitly
+// permitted by Lvalues and rvalues [basic.lval].  [Section 3.10 Para
+// 15 in C++03]
+#define JAVA_INTEGER_OP(OP, NAME, TYPE, UNSIGNED_TYPE)  \
+inline TYPE NAME (TYPE in1, TYPE in2) {                 \
+  UNSIGNED_TYPE ures = static_cast<UNSIGNED_TYPE>(in1); \
+  ures OP ## = static_cast<UNSIGNED_TYPE>(in2);         \
+  return reinterpret_cast<TYPE&>(ures);                 \
+}
+
+JAVA_INTEGER_OP(+, java_add, jint, juint)
+JAVA_INTEGER_OP(-, java_subtract, jint, juint)
+JAVA_INTEGER_OP(*, java_multiply, jint, juint)
+JAVA_INTEGER_OP(+, java_add, jlong, julong)
+JAVA_INTEGER_OP(-, java_subtract, jlong, julong)
+JAVA_INTEGER_OP(*, java_multiply, jlong, julong)
+
+#undef JAVA_INTEGER_OP
+
 // Dereference vptr
 // All C++ compilers that we know of have the vtbl pointer in the first
 // word.  If there are exceptions, this function needs to be made compiler
@@ -1426,6 +1500,7 @@ static inline void* dereference_vptr(const void* addr) {
 class GlobalDefinitions {
 public:
   static void test_globals();
+  static void test_proper_unit();
 };
 
 #endif // PRODUCT

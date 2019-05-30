@@ -535,17 +535,6 @@ public:
     msr(0b011, 0b0100, 0b0100, 0b001, zr);
   }
 
-  // Macro instructions for accessing and updating the condition flags
-  inline void get_nzcv(Register reg)
-  {
-    mrs(0b011, 0b0100, 0b0010, 0b000, reg);
-  }
-
-  inline void set_nzcv(Register reg)
-  {
-    msr(0b011, 0b0100, 0b0010, 0b000, reg);
-  }
-
   // DCZID_EL0: op1 == 011
   //            CRn == 0000
   //            CRm == 0000
@@ -948,7 +937,7 @@ public:
   void verify_FPU(int stack_depth, const char* s = "illegal FPU state");
 
   // prints msg, dumps registers and stops execution
-  void stop(const char* msg, Label *l = NULL);
+  void stop(const char* msg);
 
   // prints msg and continues
   void warn(const char* msg);
@@ -995,9 +984,13 @@ public:
 
   void atomic_add(Register prev, RegisterOrConstant incr, Register addr);
   void atomic_addw(Register prev, RegisterOrConstant incr, Register addr);
+  void atomic_addal(Register prev, RegisterOrConstant incr, Register addr);
+  void atomic_addalw(Register prev, RegisterOrConstant incr, Register addr);
 
   void atomic_xchg(Register prev, Register newv, Register addr);
   void atomic_xchgw(Register prev, Register newv, Register addr);
+  void atomic_xchgal(Register prev, Register newv, Register addr);
+  void atomic_xchgalw(Register prev, Register newv, Register addr);
 
   void orptr(Address adr, RegisterOrConstant src) {
     ldr(rscratch2, adr);

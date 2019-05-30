@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,19 +24,19 @@
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHALLOCTRACKER_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHALLOCTRACKER_HPP
 
-#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
+#include "gc_implementation/shenandoah/shenandoahAllocRequest.hpp"
+#include "gc_implementation/shenandoah/shenandoahNumberSeq.hpp"
 #include "memory/allocation.hpp"
-#include "utilities/numberSeq.hpp"
 #include "utilities/ostream.hpp"
 
 class ShenandoahAllocTracker : public CHeapObj<mtGC> {
 private:
-  BinaryMagnitudeSeq _alloc_size[ShenandoahHeap::_ALLOC_LIMIT];
-  BinaryMagnitudeSeq _alloc_latency[ShenandoahHeap::_ALLOC_LIMIT];
+  BinaryMagnitudeSeq _alloc_size[ShenandoahAllocRequest::_ALLOC_LIMIT];
+  BinaryMagnitudeSeq _alloc_latency[ShenandoahAllocRequest::_ALLOC_LIMIT];
 
 public:
   void record_alloc_latency(size_t words_size,
-                            ShenandoahHeap::AllocType _alloc_type,
+                            ShenandoahAllocRequest::Type _alloc_type,
                             double latency_us) {
     _alloc_size[_alloc_type].add(words_size);
     _alloc_latency[_alloc_type].add((size_t)latency_us);
@@ -44,6 +44,5 @@ public:
 
   void print_on(outputStream* out) const;
 };
-
 
 #endif // SHARE_VM_GC_SHENANDOAH_SHENANDOAHALLOCTRACKER_HPP

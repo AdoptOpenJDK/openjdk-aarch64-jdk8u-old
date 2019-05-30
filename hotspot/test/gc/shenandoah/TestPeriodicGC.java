@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -26,6 +26,7 @@
  * @summary Test that periodic GC is working
  * @key gc
  * @library /testlibrary
+ *
  * @run driver TestPeriodicGC
  */
 
@@ -53,52 +54,52 @@ public class TestPeriodicGC {
 
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && args[0].equals("test")) {
-           Thread.sleep(5000); // stay idle
-           return;
+            Thread.sleep(5000); // stay idle
+            return;
         }
 
         String[] enabled = new String[] {
-           "adaptive",
-           "compact",
-           "static"
+                "adaptive",
+                "compact",
+                "static"
         };
 
         String[] disabled = new String[] {
-           "aggressive",
-           "passive",
+                "aggressive",
+                "passive",
         };
 
         for (String h : enabled) {
             testWith("Short period with " + h,
-                true,
-                "-verbose:gc",
-                "-XX:+UseShenandoahGC",
-                "-XX:+UnlockDiagnosticVMOptions",
-                "-XX:+UnlockExperimentalVMOptions",
-                "-XX:ShenandoahGCHeuristics=" + h,
-                "-XX:ShenandoahGuaranteedGCInterval=1000"
+                    true,
+                    "-verbose:gc",
+                    "-XX:+UnlockDiagnosticVMOptions",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    "-XX:ShenandoahGCHeuristics=" + h,
+                    "-XX:ShenandoahGuaranteedGCInterval=1000"
             );
 
             testWith("Long period with " + h,
-                false,
-                "-verbose:gc",
-                "-XX:+UseShenandoahGC",
-                "-XX:+UnlockDiagnosticVMOptions",
-                "-XX:+UnlockExperimentalVMOptions",
-                "-XX:ShenandoahGCHeuristics=" + h,
-                "-XX:ShenandoahGuaranteedGCInterval=100000" // deliberately too long
+                    false,
+                    "-verbose:gc",
+                    "-XX:+UnlockDiagnosticVMOptions",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    "-XX:ShenandoahGCHeuristics=" + h,
+                    "-XX:ShenandoahGuaranteedGCInterval=100000" // deliberately too long
             );
         }
 
         for (String h : disabled) {
             testWith("Short period with " + h,
-                false,
-                "-verbose:gc",
-                "-XX:+UseShenandoahGC",
-                "-XX:+UnlockDiagnosticVMOptions",
-                "-XX:+UnlockExperimentalVMOptions",
-                "-XX:ShenandoahGCHeuristics=" + h,
-                "-XX:ShenandoahGuaranteedGCInterval=1000"
+                    false,
+                    "-verbose:gc",
+                    "-XX:+UnlockDiagnosticVMOptions",
+                    "-XX:+UnlockExperimentalVMOptions",
+                    "-XX:+UseShenandoahGC",
+                    "-XX:ShenandoahGCHeuristics=" + h,
+                    "-XX:ShenandoahGuaranteedGCInterval=1000"
             );
         }
     }

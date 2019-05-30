@@ -1,7 +1,6 @@
 /*
- * Copyright (c) 2013, Red Hat Inc.
- * Copyright (c) 2003, 2011, Oracle and/or its affiliates.
- * All rights reserved.
+ * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1199,13 +1198,32 @@ address InterpreterGenerator::generate_native_entry(bool synchronized) {
   // and result handler will pick it up
 
   {
-    Label no_oop, store_result;
+    Label no_oop, not_weak, store_result;
     __ adr(t, ExternalAddress(AbstractInterpreter::result_handler(T_OBJECT)));
     __ cmp(t, result_handler);
     __ br(Assembler::NE, no_oop);
-    // retrieve result
+    // Unbox oop result, e.g. JNIHandles::resolve result.
     __ pop(ltos);
-    __ cbz(r0, store_result);
+    __ cbz(r0, store_result);   // Use NULL as-is.
+    STATIC_ASSERT(JNIHandles::weak_tag_mask == 1u);
+    __ tbz(r0, 0, not_weak);    // Test for jweak tag.
+    // Resolve jweak.
+    __ ldr(r0, Address(r0, -JNIHandles::weak_tag_value));
+#if INCLUDE_ALL_GCS
+    if (UseG1GC) {
+      __ enter();                   // Barrier may call runtime.
+      __ g1_write_barrier_pre(noreg /* obj */,
+                              r0 /* pre_val */,
+                              rthread /* thread */,
+                              t /* tmp */,
+                              true /* tosca_live */,
+                              true /* expand_call */);
+      __ leave();
+    }
+#endif // INCLUDE_ALL_GCS
+    __ b(store_result);
+    __ bind(not_weak);
+    // Resolve (untagged) jobject.
     __ ldr(r0, Address(r0, 0));
     __ bind(store_result);
     __ str(r0, Address(rfp, frame::interpreter_frame_oop_temp_offset*wordSize));
@@ -1868,6 +1886,7 @@ void TemplateInterpreterGenerator::generate_throw_exception() {
   __ restore_locals();
   __ restore_constant_pool_cache();
   __ get_method(rmethod);
+  __ get_dispatch();
 
   // The method data pointer was incremented already during
   // call profiling. We have to restore the mdp for the current bcp.
@@ -1884,8 +1903,8 @@ void TemplateInterpreterGenerator::generate_throw_exception() {
     Label L_done;
 
     __ ldrb(rscratch1, Address(rbcp, 0));
-    __ cmpw(r1, Bytecodes::_invokestatic);
-    __ br(Assembler::EQ, L_done);
+    __ cmpw(rscratch1, Bytecodes::_invokestatic);
+    __ br(Assembler::NE, L_done);
 
     // The member name argument must be restored if _invokestatic is re-executed after a PopFrame call.
     // Detect such a case in the InterpreterRuntime function and return the member name argument, or NULL.
@@ -1921,7 +1940,6 @@ void TemplateInterpreterGenerator::generate_throw_exception() {
   // remove the activation (without doing throws on illegalMonitorExceptions)
   __ remove_activation(vtos, false, true, false);
   // restore exception
-  // restore exception
   __ get_vm_result(r0, rthread);
 
   // In between activations - previous activation type unknown yet
@@ -1930,9 +1948,8 @@ void TemplateInterpreterGenerator::generate_throw_exception() {
   //
   // r0: exception
   // lr: return address/pc that threw exception
-  // rsp: expression stack of caller
+  // esp: expression stack of caller
   // rfp: fp of caller
-  // FIXME: There's no point saving LR here because VM calls don't trash it
   __ stp(r0, lr, Address(__ pre(sp, -2 * wordSize)));  // save exception & return address
   __ super_call_VM_leaf(CAST_FROM_FN_PTR(address,
                           SharedRuntime::exception_handler_for_return_address),
@@ -2040,22 +2057,10 @@ void TemplateInterpreterGenerator::count_bytecode() {
   Register rscratch3 = r0;
   __ push(rscratch1);
   __ push(rscratch2);
-  __ mov(rscratch2, (address) &BytecodeCounter::_counter_value);
-  if (UseLSE) {
-    __ mov(rscratch1, 1);
-    __ ldadd(Assembler::xword, rscratch1, zr, rscratch2);
-  } else {
-    __ push(rscratch3);
-    Label L;
-    if ((VM_Version::cpu_cpuFeatures() & VM_Version::CPU_STXR_PREFETCH))
-      __ prfm(Address(rscratch2), PSTL1STRM);
-    __ bind(L);
-    __ ldxr(rscratch1, rscratch2);
-    __ add(rscratch1, rscratch1, 1);
-    __ stxr(rscratch3, rscratch1, rscratch2);
-    __ cbnzw(rscratch3, L);
-    __ pop(rscratch3);
-  }
+  __ push(rscratch3);
+  __ mov(rscratch3, (address) &BytecodeCounter::_counter_value);
+  __ atomic_add(noreg, 1, rscratch3);
+  __ pop(rscratch3);
   __ pop(rscratch2);
   __ pop(rscratch1);
 }

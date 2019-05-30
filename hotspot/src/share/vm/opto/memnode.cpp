@@ -25,7 +25,7 @@
 #include "precompiled.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "compiler/compileLog.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "memory/allocation.inline.hpp"
 #include "oops/objArrayKlass.hpp"
 #include "opto/addnode.hpp"
@@ -1339,10 +1339,14 @@ Node *LoadNode::Ideal(PhaseGVN *phase, bool can_reshape) {
   Node* ctrl    = in(MemNode::Control);
   Node* address = in(MemNode::Address);
 
+  bool addr_mark = ((phase->type(address)->isa_oopptr() || phase->type(address)->isa_narrowoop()) &&
+         phase->type(address)->is_ptr()->offset() == oopDesc::mark_offset_in_bytes());
+
   // Skip up past a SafePoint control.  Cannot do this for Stores because
   // pointer stores & cardmarks must stay on the same side of a SafePoint.
   if( ctrl != NULL && ctrl->Opcode() == Op_SafePoint &&
-      phase->C->get_alias_index(phase->type(address)->is_ptr()) != Compile::AliasIdxRaw ) {
+      phase->C->get_alias_index(phase->type(address)->is_ptr()) != Compile::AliasIdxRaw  &&
+      !addr_mark ) {
     ctrl = ctrl->in(0);
     set_req(MemNode::Control,ctrl);
   }
@@ -1505,7 +1509,7 @@ const Type *LoadNode::Value( PhaseTransform *phase ) const {
     // as to alignment, which will therefore produce the smallest
     // possible base offset.
     const int min_base_off = arrayOopDesc::base_offset_in_bytes(T_BYTE);
-    const bool off_beyond_header = (off != BrooksPointer::byte_offset() || !UseShenandoahGC) && ((uint)off >= (uint)min_base_off);
+    const bool off_beyond_header = (off != ShenandoahBrooksPointer::byte_offset() || !UseShenandoahGC) && ((uint)off >= (uint)min_base_off);
 
     // Try to constant-fold a stable array element.
     if (FoldStableValues && ary->is_stable()) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -160,6 +160,7 @@ address os::Solaris::handler_end;    // end pc of thr_sighndlrinfo
 
 address os::Solaris::_main_stack_base = NULL;  // 4352906 workaround
 
+os::Solaris::pthread_setname_np_func_t os::Solaris::_pthread_setname_np = NULL;
 
 // "default" initializers for missing libc APIs
 extern "C" {
@@ -200,17 +201,21 @@ static inline stack_t get_stack_info() {
   return st;
 }
 
-address os::current_stack_base() {
+bool os::is_primordial_thread(void) {
   int r = thr_main() ;
   guarantee (r == 0 || r == 1, "CR6501650 or CR6493689") ;
-  bool is_primordial_thread = r;
+  return r == 1;
+}
+
+address os::current_stack_base() {
+  bool _is_primordial_thread = is_primordial_thread();
 
   // Workaround 4352906, avoid calls to thr_stksegment by
   // thr_main after the first one (it looks like we trash
   // some data, causing the value for ss_sp to be incorrect).
-  if (!is_primordial_thread || os::Solaris::_main_stack_base == NULL) {
+  if (!_is_primordial_thread || os::Solaris::_main_stack_base == NULL) {
     stack_t st = get_stack_info();
-    if (is_primordial_thread) {
+    if (_is_primordial_thread) {
       // cache initial value of stack base
       os::Solaris::_main_stack_base = (address)st.ss_sp;
     }
@@ -224,9 +229,7 @@ address os::current_stack_base() {
 size_t os::current_stack_size() {
   size_t size;
 
-  int r = thr_main() ;
-  guarantee (r == 0 || r == 1, "CR6501650 or CR6493689") ;
-  if(!r) {
+  if (!is_primordial_thread()) {
     size = get_stack_info().ss_size;
   } else {
     struct rlimit limits;
@@ -517,8 +520,15 @@ static bool assign_distribution(processorid_t* id_array,
 }
 
 void os::set_native_thread_name(const char *name) {
-  // Not yet implemented.
-  return;
+  if (Solaris::_pthread_setname_np != NULL) {
+    // Only the first 31 bytes of 'name' are processed by pthread_setname_np
+    // but we explicitly copy into a size-limited buffer to avoid any
+    // possible overflow.
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%s", name);
+    buf[sizeof(buf) - 1] = '\0';
+    Solaris::_pthread_setname_np(pthread_self(), buf);
+  }
 }
 
 bool os::distribute_processes(uint length, uint* distribution) {
@@ -1287,9 +1297,7 @@ void _handle_uncaught_cxx_exception() {
 
 // First crack at OS-specific initialization, from inside the new thread.
 void os::initialize_thread(Thread* thr) {
-  int r = thr_main() ;
-  guarantee (r == 0 || r == 1, "CR6501650 or CR6493689") ;
-  if (r) {
+  if (is_primordial_thread()) {
     JavaThread* jt = (JavaThread *)thr;
     assert(jt != NULL,"Sanity check");
     size_t stack_size;
@@ -4914,12 +4922,20 @@ void os::init(void) {
   // (Solaris only) this switches to calls that actually do locking.
   ThreadCritical::initialize();
 
+  // main_thread points to the thread that created/loaded the JVM.
   main_thread = thr_self();
 
   // Constant minimum stack size allowed. It must be at least
   // the minimum of what the OS supports (thr_min_stack()), and
   // enough to allow the thread to get to user bytecode execution.
   Solaris::min_stack_allowed = MAX2(thr_min_stack(), Solaris::min_stack_allowed);
+
+  // retrieve entry point for pthread_setname_np
+  void * handle = dlopen("libc.so.1", RTLD_LAZY);
+  if (handle != NULL) {
+    Solaris::_pthread_setname_np =
+        (Solaris::pthread_setname_np_func_t)dlsym(handle, "pthread_setname_np");
+  }
   // If the pagesize of the VM is greater than 8K determine the appropriate
   // number of initial guard pages.  The user can change this with the
   // command line arguments, if needed.
@@ -6152,7 +6168,7 @@ extern char** environ;
 // or -1 on failure (e.g. can't fork a new process).
 // Unlike system(), this function can be called from signal handler. It
 // doesn't block SIGINT et al.
-int os::fork_and_exec(char* cmd) {
+int os::fork_and_exec(char* cmd, bool use_vfork_if_available) {
   char * argv[4];
   argv[0] = (char *)"sh";
   argv[1] = (char *)"-c";
