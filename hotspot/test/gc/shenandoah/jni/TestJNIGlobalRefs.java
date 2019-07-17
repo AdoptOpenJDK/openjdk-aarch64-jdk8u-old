@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -29,8 +29,8 @@ public class TestJNIGlobalRefs {
         System.loadLibrary("TestJNIGlobalRefs");
     }
 
-    private static final int TIME_MSEC  = 120000;
-    private static final int ARRAY_SIZE =  10000;
+    private static final int TIME_MSEC = 120000;
+    private static final int ARRAY_SIZE = 10000;
 
     private static native void makeGlobalRef(Object o);
     private static native void makeWeakGlobalRef(Object o);
@@ -63,17 +63,17 @@ public class TestJNIGlobalRefs {
     }
 
     private static void testGlobal() {
-        int[] a = (int[])readGlobalRef();
+        int[] a = (int[]) readGlobalRef();
         checkArray(a, 1337);
     }
 
     private static void testWeakGlobal() {
-        int[] a = (int[])readWeakGlobalRef();
+        int[] a = (int[]) readWeakGlobalRef();
         if (a != null) {
-          checkArray(a, 8080);
+            checkArray(a, 8080);
         } else {
-          // weak reference is cleaned, recreate:
-          seedWeakGlobalRef();
+            // weak reference is cleaned, recreate:
+            seedWeakGlobalRef();
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -46,7 +46,6 @@
 #include "trace/tracing.hpp"
 #include "utilities/dtrace.hpp"
 #include "utilities/events.hpp"
-#include "utilities/macros.hpp"
 #ifdef COMPILER1
 #include "c1/c1_Compiler.hpp"
 #endif
@@ -752,7 +751,9 @@ CompileTask* CompileQueue::get() {
     No_Safepoint_Verifier nsv;
     task = CompilationPolicy::policy()->select_task(this);
   }
-  remove(task);
+  if (task != NULL) {
+    remove(task);
+  }
   purge_stale_tasks(); // may temporarily release MCQ lock
   return task;
 }
@@ -1988,8 +1989,6 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
 
     ciMethod* target = ci_env.get_method_from_handle(target_handle);
 
-    bool target_compilable = target->can_be_compiled();
-
     TraceTime t1("compilation", &time);
     EventCompilation event;
 
@@ -2022,14 +2021,6 @@ void CompileBroker::invoke_compiler_on_method(CompileTask* task) {
             err_msg_res("COMPILE SKIPPED: %s",      ci_env.failure_reason());
         task->print_compilation(tty, msg);
       }
-
-#if INCLUDE_ALL_GCS
-     guarantee(!UseShenandoahGC || !ShenandoahCompileCheck || !target_compilable || (compilable != ciEnv::MethodCompilable_not_at_tier),
-               err_msg("Not compilable on level %d due to: %s", task_level, ci_env.failure_reason()));
-     guarantee(!UseShenandoahGC || !ShenandoahCompileCheck || !target_compilable ||(compilable != ciEnv::MethodCompilable_never || !target_compilable),
-               err_msg("Never compilable due to: %s", ci_env.failure_reason()));
-#endif
-
     } else {
       task->mark_success();
       task->set_num_inlined_bytecodes(ci_env.num_inlined_bytecodes());

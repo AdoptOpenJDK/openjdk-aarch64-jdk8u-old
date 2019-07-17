@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,6 +22,7 @@
  */
 
 #include "precompiled.hpp"
+
 #include "gc_implementation/shenandoah/heuristics/shenandoahAdaptiveHeuristics.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
 #include "gc_implementation/shenandoah/shenandoahFreeSet.hpp"
@@ -34,6 +35,17 @@ ShenandoahAdaptiveHeuristics::ShenandoahAdaptiveHeuristics() :
   _cycle_gap_history(new TruncatedSeq(5)),
   _conc_mark_duration_history(new TruncatedSeq(5)),
   _conc_uprefs_duration_history(new TruncatedSeq(5)) {
+
+  SHENANDOAH_ERGO_ENABLE_FLAG(ExplicitGCInvokesConcurrent);
+  SHENANDOAH_ERGO_ENABLE_FLAG(ShenandoahImplicitGCInvokesConcurrent);
+
+  // Final configuration checks
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahSATBBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahReadBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahWriteBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCASBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahAcmpBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCloneBarrier);
 }
 
 ShenandoahAdaptiveHeuristics::~ShenandoahAdaptiveHeuristics() {}
@@ -60,10 +72,10 @@ void ShenandoahAdaptiveHeuristics::choose_collection_set_from_regiondata(Shenand
   // we hit max_cset. When max_cset is hit, we terminate the cset selection. Note that in this scheme,
   // ShenandoahGarbageThreshold is the soft threshold which would be ignored until min_garbage is hit.
 
-  size_t capacity    = ShenandoahHeap::heap()->capacity();
-  size_t free_target = ShenandoahMinFreeThreshold * capacity / 100;
+  size_t capacity    = ShenandoahHeap::heap()->max_capacity();
+  size_t free_target = capacity / 100 * ShenandoahMinFreeThreshold;
   size_t min_garbage = free_target > actual_free ? (free_target - actual_free) : 0;
-  size_t max_cset    = (size_t)(1.0 * ShenandoahEvacReserve * capacity / 100 / ShenandoahEvacWaste);
+  size_t max_cset    = (size_t)((1.0 * capacity / 100 * ShenandoahEvacReserve) / ShenandoahEvacWaste);
 
   log_info(gc, ergo)("Adaptive CSet Selection. Target Free: " SIZE_FORMAT "M, Actual Free: "
                      SIZE_FORMAT "M, Max CSet: " SIZE_FORMAT "M, Min Garbage: " SIZE_FORMAT "M",
@@ -111,12 +123,12 @@ void ShenandoahAdaptiveHeuristics::record_phase_time(ShenandoahPhaseTimings::Pha
 
 bool ShenandoahAdaptiveHeuristics::should_start_normal_gc() const {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
-  size_t capacity = heap->capacity();
+  size_t capacity = heap->max_capacity();
   size_t available = heap->free_set()->available();
 
   // Check if we are falling below the worst limit, time to trigger the GC, regardless of
   // anything else.
-  size_t min_threshold = ShenandoahMinFreeThreshold * heap->capacity() / 100;
+  size_t min_threshold = capacity / 100 * ShenandoahMinFreeThreshold;
   if (available < min_threshold) {
     log_info(gc)("Trigger: Free (" SIZE_FORMAT "M) is below minimum threshold (" SIZE_FORMAT "M)",
                  available / M, min_threshold / M);
@@ -126,7 +138,7 @@ bool ShenandoahAdaptiveHeuristics::should_start_normal_gc() const {
   // Check if are need to learn a bit about the application
   const size_t max_learn = ShenandoahLearningSteps;
   if (_gc_times_learned < max_learn) {
-    size_t init_threshold = ShenandoahInitFreeThreshold * heap->capacity() / 100;
+    size_t init_threshold = capacity / 100 * ShenandoahInitFreeThreshold;
     if (available < init_threshold) {
       log_info(gc)("Trigger: Learning " SIZE_FORMAT " of " SIZE_FORMAT ". Free (" SIZE_FORMAT "M) is below initial threshold (" SIZE_FORMAT "M)",
                    _gc_times_learned + 1, max_learn, available / M, init_threshold / M);
@@ -140,8 +152,8 @@ bool ShenandoahAdaptiveHeuristics::should_start_normal_gc() const {
 
   size_t allocation_headroom = available;
 
-  size_t spike_headroom = ShenandoahAllocSpikeFactor * capacity / 100;
-  size_t penalties      = _gc_time_penalties         * capacity / 100;
+  size_t spike_headroom = capacity / 100 * ShenandoahAllocSpikeFactor;
+  size_t penalties      = capacity / 100 * _gc_time_penalties;
 
   allocation_headroom -= MIN2(allocation_headroom, spike_headroom);
   allocation_headroom -= MIN2(allocation_headroom, penalties);
@@ -149,7 +161,7 @@ bool ShenandoahAdaptiveHeuristics::should_start_normal_gc() const {
   // TODO: Allocation rate is way too averaged to be useful during state changes
 
   double average_gc = _gc_time_history->avg();
-  double time_since_last = os::elapsedTime() - _cycle_start;
+  double time_since_last = time_since_last_gc();
   double allocation_rate = heap->bytes_allocated_since_gc_start() / time_since_last;
 
   if (average_gc > allocation_headroom / allocation_rate) {

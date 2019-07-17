@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,15 +22,16 @@
  */
 
 #include "precompiled.hpp"
+
 #include "gc_implementation/shenandoah/heuristics/shenandoahPassiveHeuristics.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
-#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc_implementation/shenandoah/shenandoahLogging.hpp"
 
-ShenandoahPassiveHeuristics::ShenandoahPassiveHeuristics() : ShenandoahAdaptiveHeuristics() {
+ShenandoahPassiveHeuristics::ShenandoahPassiveHeuristics() : ShenandoahHeuristics() {
   // Do not allow concurrent cycles.
   FLAG_SET_DEFAULT(ExplicitGCInvokesConcurrent, false);
+  FLAG_SET_DEFAULT(ShenandoahImplicitGCInvokesConcurrent, false);
 
   // Passive runs with max speed, reacts on allocation failure.
   FLAG_SET_DEFAULT(ShenandoahPacing, false);
@@ -47,6 +48,9 @@ ShenandoahPassiveHeuristics::ShenandoahPassiveHeuristics() : ShenandoahAdaptiveH
   SHENANDOAH_ERGO_DISABLE_FLAG(ShenandoahCASBarrier);
   SHENANDOAH_ERGO_DISABLE_FLAG(ShenandoahAcmpBarrier);
   SHENANDOAH_ERGO_DISABLE_FLAG(ShenandoahCloneBarrier);
+
+  // Final configuration checks
+  // No barriers are required to run.
 }
 
 bool ShenandoahPassiveHeuristics::should_start_normal_gc() const {
@@ -55,20 +59,45 @@ bool ShenandoahPassiveHeuristics::should_start_normal_gc() const {
 }
 
 bool ShenandoahPassiveHeuristics::should_process_references() {
-  if (ShenandoahRefProcFrequency == 0) return false;
-  // Always process references.
-  return true;
+  // Always process references, if we can.
+  return can_process_references();
 }
 
 bool ShenandoahPassiveHeuristics::should_unload_classes() {
-  if (ShenandoahUnloadClassesFrequency == 0) return false;
-  // Always unload classes.
-  return true;
+  // Always unload classes, if we can.
+  return can_unload_classes();
 }
 
 bool ShenandoahPassiveHeuristics::should_degenerate_cycle() {
   // Always fail to Degenerated GC, if enabled
   return ShenandoahDegeneratedGC;
+}
+
+void ShenandoahPassiveHeuristics::choose_collection_set_from_regiondata(ShenandoahCollectionSet* cset,
+                                                                        RegionData* data, size_t size,
+                                                                        size_t actual_free) {
+  assert(ShenandoahDegeneratedGC, "This path is only taken for Degenerated GC");
+
+  // Do not select too large CSet that would overflow the available free space.
+  // Take at least the entire evacuation reserve, and be free to overflow to free space.
+  size_t capacity  = ShenandoahHeap::heap()->max_capacity();
+  size_t available = MAX2(capacity / 100 * ShenandoahEvacReserve, actual_free);
+  size_t max_cset  = (size_t)(available / ShenandoahEvacWaste);
+
+  log_info(gc, ergo)("CSet Selection. Actual Free: " SIZE_FORMAT "M, Max CSet: " SIZE_FORMAT "M",
+                     actual_free / M, max_cset / M);
+
+  size_t threshold = ShenandoahHeapRegion::region_size_bytes() * ShenandoahGarbageThreshold / 100;
+
+  size_t live_cset = 0;
+  for (size_t idx = 0; idx < size; idx++) {
+    ShenandoahHeapRegion* r = data[idx]._region;
+    size_t new_cset = live_cset + r->get_live_data_bytes();
+    if (new_cset < max_cset && r->garbage() > threshold) {
+      live_cset = new_cset;
+      cset->add_region(r);
+    }
+  }
 }
 
 const char* ShenandoahPassiveHeuristics::name() {

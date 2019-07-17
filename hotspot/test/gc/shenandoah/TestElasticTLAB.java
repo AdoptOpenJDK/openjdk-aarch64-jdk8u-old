@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,34 +24,35 @@
 /*
  * @test TestElasticTLAB
  * @summary Test that Shenandoah is able to work with elastic TLABs
+ * @key gc
  *
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:-UseTLAB -XX:-ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:-UseTLAB -XX:-ShenandoahElasticTLAB                       TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:-UseTLAB -XX:+ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:-UseTLAB -XX:+ShenandoahElasticTLAB                       TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:+UseTLAB -XX:-ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:+UseTLAB -XX:-ShenandoahElasticTLAB                       TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:+UseTLAB -XX:+ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
- * @run main/othervm -XX:+UseShenandoahGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -Xmx1g -XX:+UseTLAB -XX:+ShenandoahElasticTLAB                       TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:-UseTLAB -XX:-ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:-UseTLAB -XX:-ShenandoahElasticTLAB                       TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:-UseTLAB -XX:+ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:-UseTLAB -XX:+ShenandoahElasticTLAB                       TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:+UseTLAB -XX:-ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:+UseTLAB -XX:-ShenandoahElasticTLAB                       TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:+UseTLAB -XX:+ShenandoahElasticTLAB -XX:+ShenandoahVerify TestElasticTLAB
+ * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC -Xmx1g -XX:+UseTLAB -XX:+ShenandoahElasticTLAB                       TestElasticTLAB
  */
 
 import java.util.Random;
 
 public class TestElasticTLAB {
 
-  static final long TARGET_MB = Long.getLong("target", 10_000); // 10 Gb allocation
+    static final long TARGET_MB = Long.getLong("target", 10_000); // 10 Gb allocation
 
-  static volatile Object sink;
+    static volatile Object sink;
 
-  public static void main(String[] args) throws Exception {
-    final int min = 0;
-    final int max = 384*1024;
-    long count = TARGET_MB * 1024 * 1024 / (16 + 4*(min + (max-min)/2));
+    public static void main(String[] args) throws Exception {
+        final int min = 0;
+        final int max = 384 * 1024;
+        long count = TARGET_MB * 1024 * 1024 / (16 + 4 * (min + (max - min) / 2));
 
-    Random r = new Random();
-    for (long c = 0; c < count; c++) {
-      sink = new int[min + r.nextInt(max-min)];
+        Random r = new Random();
+        for (long c = 0; c < count; c++) {
+            sink = new int[min + r.nextInt(max - min)];
+        }
     }
-  }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2017, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,19 +24,32 @@
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHLOGGING_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHLOGGING_HPP
 
-#define log_trace(...)   if (ShenandoahLogTrace)   gclog_or_tty->print_cr
-#define log_debug(...)   if (ShenandoahLogDebug)   gclog_or_tty->print_cr
-#define log_warning(...) if (ShenandoahLogWarning) gclog_or_tty->print_cr
+#include <stdio.h> // for va_list and friends
+#include <stdarg.h>
+
+class ShenandoahLogger {
+public:
+  static void handle_trace(const char* format, ...);
+  static void handle_debug(const char* format, ...);
+  static void handle_info(const char* format, ...);
+  static void handle_warning(const char* format, ...);
+private:
+  static void handle_generic(const char* format, va_list ap);
+};
+
+#define log_trace(...)   if (ShenandoahLogTrace)   ShenandoahLogger::handle_trace
+#define log_debug(...)   if (ShenandoahLogDebug)   ShenandoahLogger::handle_debug
+#define log_warning(...) if (ShenandoahLogWarning) ShenandoahLogger::handle_warning
 
 // With ShenandoahLogInfo, only print out the single-"gc"-tag messages.
 #define log_info(...)    if (((strcmp(#__VA_ARGS__, "gc") == 0) && (ShenandoahLogInfo  || PrintGC || PrintGCDetails)) || \
                              ((strcmp(#__VA_ARGS__, "gc") > 0)  && (ShenandoahLogInfo  || PrintGCDetails)) || \
                              ShenandoahLogDebug)  \
-                                gclog_or_tty->print_cr
+                                ShenandoahLogger::handle_info
 
 #ifndef PRODUCT
-#define log_develop_trace(...) if (ShenandoahLogTrace) gclog_or_tty->print_cr
-#define log_develop_debug(...) if (ShenandoahLogDebug) gclog_or_tty->print_cr
+#define log_develop_trace(...) if (ShenandoahLogTrace) ShenandoahLogger::handle_trace
+#define log_develop_debug(...) if (ShenandoahLogDebug) ShenandoahLogger::handle_debug
 #else
 #define DUMMY_ARGUMENT_CONSUMER(...)
 #define log_develop_trace(...) DUMMY_ARGUMENT_CONSUMER

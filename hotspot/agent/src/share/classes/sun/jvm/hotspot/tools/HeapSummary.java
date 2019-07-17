@@ -197,6 +197,14 @@ public class HeapSummary extends Tool {
            return;
        }
 
+       l = getFlagValue("UseShenandoahGC", flagMap);
+       if (l == 1L) {
+           System.out.print("Shenandoah GC ");
+           l = getFlagValue("ParallelGCThreads", flagMap);
+           System.out.println("with " + l + " thread(s)");
+           return;
+       }
+
        System.out.println("Mark Sweep Compact GC");
    }
 

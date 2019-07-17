@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,10 +22,12 @@
  */
 
 #include "precompiled.hpp"
+
 #include "gc_implementation/shenandoah/heuristics/shenandoahAggressiveHeuristics.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc_implementation/shenandoah/shenandoahLogging.hpp"
+#include "runtime/os.hpp"
 
 ShenandoahAggressiveHeuristics::ShenandoahAggressiveHeuristics() : ShenandoahHeuristics() {
   // Do not shortcut evacuation
@@ -42,6 +44,14 @@ ShenandoahAggressiveHeuristics::ShenandoahAggressiveHeuristics() : ShenandoahHeu
   if (ClassUnloading) {
     SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahUnloadClassesFrequency, 1);
   }
+
+  // Final configuration checks
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahSATBBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahReadBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahWriteBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCASBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahAcmpBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCloneBarrier);
 }
 
 void ShenandoahAggressiveHeuristics::choose_collection_set_from_regiondata(ShenandoahCollectionSet* cset,
@@ -61,13 +71,14 @@ bool ShenandoahAggressiveHeuristics::should_start_normal_gc() const {
 }
 
 bool ShenandoahAggressiveHeuristics::should_process_references() {
-  if (ShenandoahRefProcFrequency == 0) return false;
+  if (!can_process_references()) return false;
   // Randomly process refs with 50% chance.
   return (os::random() & 1) == 1;
 }
 
 bool ShenandoahAggressiveHeuristics::should_unload_classes() {
-  if (ShenandoahUnloadClassesFrequency == 0) return false;
+  if (!can_unload_classes_normal()) return false;
+  if (has_metaspace_oom()) return true;
   // Randomly unload classes with 50% chance.
   return (os::random() & 1) == 1;
 }

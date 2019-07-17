@@ -392,7 +392,6 @@ JNI_ENTRY(jclass, jni_DefineClass(JNIEnv *env, const char *name, jobject loaderR
   if (UsePerfData && !class_loader.is_null()) {
     // check whether the current caller thread holds the lock or not.
     // If not, increment the corresponding counter
-    Handle class_loader1 (THREAD, class_loader());
     if (ObjectSynchronizer::
         query_lock_ownership((JavaThread*)THREAD, class_loader) !=
         ObjectSynchronizer::owner_self) {
@@ -710,6 +709,7 @@ JNI_ENTRY(jint, jni_Throw(JNIEnv *env, jthrowable obj))
 
   THROW_OOP_(JNIHandles::resolve(obj), JNI_OK);
   ShouldNotReachHere();
+  return 0; // Mute compiler.
 JNI_END
 
 #ifndef USDT2
@@ -736,6 +736,7 @@ JNI_ENTRY(jint, jni_ThrowNew(JNIEnv *env, jclass clazz, const char *message))
   Handle protection_domain (THREAD, k->protection_domain());
   THROW_MSG_LOADER_(name, (char *)message, class_loader, protection_domain, JNI_OK);
   ShouldNotReachHere();
+  return 0; // Mute compiler.
 JNI_END
 
 
@@ -1142,8 +1143,7 @@ class JNI_ArgumentPusherVaArg : public JNI_ArgumentPusher {
   inline void get_long()   { _arguments->push_long(va_arg(_ap, jlong)); }
   inline void get_float()  { _arguments->push_float((jfloat)va_arg(_ap, jdouble)); } // float is coerced to double w/ va_arg
   inline void get_double() { _arguments->push_double(va_arg(_ap, jdouble)); }
-  inline void get_object() { jobject l = va_arg(_ap, jobject);
-                             _arguments->push_oop(Handle((oop *)l, false)); }
+  inline void get_object() { _arguments->push_jobject(va_arg(_ap, jobject)); }
 
   inline void set_ap(va_list rap) {
 #ifdef va_copy
@@ -1237,7 +1237,7 @@ class JNI_ArgumentPusherArray : public JNI_ArgumentPusher {
   inline void get_long()   { _arguments->push_long((_ap++)->j);  }
   inline void get_float()  { _arguments->push_float((_ap++)->f); }
   inline void get_double() { _arguments->push_double((_ap++)->d);}
-  inline void get_object() { _arguments->push_oop(Handle((oop *)(_ap++)->l, false)); }
+  inline void get_object() { _arguments->push_jobject((_ap++)->l); }
 
   inline void set_ap(const jvalue *rap) { _ap = rap; }
 
@@ -3619,7 +3619,6 @@ JNI_QUICK_ENTRY(ElementType*, \
   DTRACE_PROBE3(hotspot_jni, Get##Result##ArrayElements__entry, env, array, isCopy);\
   /* allocate an chunk of memory in c land */ \
   typeArrayOop a = typeArrayOop(JNIHandles::resolve_non_null(array)); \
-  a = typeArrayOop(oopDesc::bs()->read_barrier(a)); \
   ElementType* result; \
   int len = a->length(); \
   if (len == 0) { \
@@ -3720,7 +3719,6 @@ JNI_QUICK_ENTRY(void, \
   JNIWrapper("Release" XSTR(Result) "ArrayElements"); \
   DTRACE_PROBE4(hotspot_jni, Release##Result##ArrayElements__entry, env, array, buf, mode);\
   typeArrayOop a = typeArrayOop(JNIHandles::resolve_non_null(array)); \
-  a = typeArrayOop(oopDesc::bs()->write_barrier(a)); \
   int len = a->length(); \
   if (len != 0) {   /* Empty array:  nothing to free or copy. */  \
     if ((mode == 0) || (mode == JNI_COMMIT)) { \
@@ -3802,7 +3800,6 @@ jni_Get##Result##ArrayRegion(JNIEnv *env, ElementType##Array array, jsize start,
   DTRACE_PROBE5(hotspot_jni, Get##Result##ArrayRegion__entry, env, array, start, len, buf);\
   DT_VOID_RETURN_MARK(Get##Result##ArrayRegion); \
   typeArrayOop src = typeArrayOop(JNIHandles::resolve_non_null(array)); \
-  src = typeArrayOop(oopDesc::bs()->read_barrier(src)); \
   if (start < 0 || len < 0 || ((unsigned int)start + (unsigned int)len > (unsigned int)src->length())) { \
     THROW(vmSymbols::java_lang_ArrayIndexOutOfBoundsException()); \
   } else { \
@@ -3887,7 +3884,6 @@ jni_Set##Result##ArrayRegion(JNIEnv *env, ElementType##Array array, jsize start,
   DTRACE_PROBE5(hotspot_jni, Set##Result##ArrayRegion__entry, env, array, start, len, buf);\
   DT_VOID_RETURN_MARK(Set##Result##ArrayRegion); \
   typeArrayOop dst = typeArrayOop(JNIHandles::resolve_non_null(array)); \
-  dst = typeArrayOop(oopDesc::bs()->write_barrier(dst)); \
   if (start < 0 || len < 0 || ((unsigned int)start + (unsigned int)len > (unsigned int)dst->length())) { \
     THROW(vmSymbols::java_lang_ArrayIndexOutOfBoundsException()); \
   } else { \
@@ -5143,6 +5139,7 @@ void execute_internal_vm_tests() {
     run_unit_test(TestMetachunk_test());
     run_unit_test(TestVirtualSpaceNode_test());
     run_unit_test(GlobalDefinitions::test_globals());
+    run_unit_test(GlobalDefinitions::test_proper_unit());
     run_unit_test(GCTimerAllTest::all());
     run_unit_test(arrayOopDesc::test_max_array_length());
     run_unit_test(CollectedHeap::test_is_in());

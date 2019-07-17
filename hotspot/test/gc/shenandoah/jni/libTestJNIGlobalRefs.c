@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -46,4 +46,3 @@ JNIEXPORT jobject JNICALL
 Java_TestJNIGlobalRefs_readWeakGlobalRef(JNIEnv *env, jclass unused) {
   return weak_global_ref;
 }
-

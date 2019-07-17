@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,7 +22,7 @@
  */
 
 #include "precompiled.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahBarrierSet.inline.hpp"
 
 #include "asm/macroAssembler.hpp"
@@ -34,7 +34,6 @@
 
 void ShenandoahBarrierSet::interpreter_read_barrier(MacroAssembler* masm, Register dst) {
   if (ShenandoahReadBarrier) {
-
     Label is_null;
     __ testptr(dst, dst);
     __ jcc(Assembler::zero, is_null);
@@ -45,12 +44,11 @@ void ShenandoahBarrierSet::interpreter_read_barrier(MacroAssembler* masm, Regist
 
 void ShenandoahBarrierSet::interpreter_read_barrier_not_null(MacroAssembler* masm, Register dst) {
   if (ShenandoahReadBarrier) {
-    __ movptr(dst, Address(dst, BrooksPointer::byte_offset()));
+    __ movptr(dst, Address(dst, ShenandoahBrooksPointer::byte_offset()));
   }
 }
 
 void ShenandoahBarrierSet::interpreter_write_barrier(MacroAssembler* masm, Register dst) {
-
   if (! ShenandoahWriteBarrier) {
     return interpreter_read_barrier(masm, dst);
   }
@@ -156,10 +154,10 @@ void ShenandoahBarrierSet::asm_acmp_barrier(MacroAssembler* masm, Register op1, 
 
 void ShenandoahHeap::compile_prepare_oop(MacroAssembler* masm, Register obj) {
 #ifdef _LP64
-  __ incrementq(obj, BrooksPointer::byte_size());
+  __ incrementq(obj, ShenandoahBrooksPointer::byte_size());
 #else
-  __ incrementl(obj, BrooksPointer::byte_size());
+  __ incrementl(obj, ShenandoahBrooksPointer::byte_size());
 #endif
-  __ movptr(Address(obj, BrooksPointer::byte_offset()), obj);
+  __ movptr(Address(obj, ShenandoahBrooksPointer::byte_offset()), obj);
 }
 #endif

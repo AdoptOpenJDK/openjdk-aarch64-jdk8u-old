@@ -417,8 +417,6 @@ void MemoryService::add_g1OldGen_memory_pool(G1CollectedHeap* g1h,
   minor_mgr->add_pool(old_gen, false /* always_affected_by_gc */);
   _pools_list->append(old_gen);
 }
-
-
 #endif // INCLUDE_ALL_GCS
 
 void MemoryService::add_code_heap_memory_pool(CodeHeap* heap) {

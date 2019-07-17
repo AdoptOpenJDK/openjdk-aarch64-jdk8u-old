@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2019, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,8 +24,7 @@
 #include "precompiled.hpp"
 
 #include "classfile/altHashing.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
-#include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahMarkingContext.inline.hpp"
@@ -33,6 +32,8 @@
 #include "gc_implementation/shenandoah/shenandoahStrDedupTable.hpp"
 #include "gc_implementation/shenandoah/shenandoahStrDedupThread.hpp"
 #include "gc_implementation/shenandoah/shenandoahStringDedup.hpp"
+#include "gc_implementation/shenandoah/shenandoahTimingTracker.hpp"
+#include "gc_implementation/shenandoah/shenandoahWorkGroup.hpp"
 #include "gc_implementation/shenandoah/shenandoahUtils.hpp"
 #include "runtime/os.hpp"
 #include "utilities/workgroup.hpp"
@@ -108,7 +109,6 @@ void ShenandoahStringDedup::parallel_oops_do(OopClosure* cl) {
   _table->parallel_oops_do(cl);
   _thread->parallel_oops_do(cl);
 }
-
 
 void ShenandoahStringDedup::oops_do_slow(OopClosure* cl) {
   _queues->oops_do_slow(cl);

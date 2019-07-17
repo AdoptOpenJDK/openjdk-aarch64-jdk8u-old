@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat, Inc. All rights reserved.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,16 +22,24 @@
  */
 
 /**
- * @test
+ * @test TestMaybeNullUnsafeAccess
  * @summary cast on before unsafe access moved in dominating null check null path causes crash
- *
+ * @key gc
  * @library /testlibrary
- * @run main/othervm -XX:-UseOnStackReplacement -XX:-BackgroundCompilation -XX:-TieredCompilation TestMaybeNullUnsafeAccess
- *      
+ *
+ * @run main/othervm -XX:-UseOnStackReplacement -XX:-BackgroundCompilation -XX:-TieredCompilation
+ *                   TestMaybeNullUnsafeAccess
+ *
+ * @run main/othervm -XX:-UseOnStackReplacement -XX:-BackgroundCompilation -XX:-TieredCompilation
+ *                   -XX:+UnlockExperimentalVMOptions -XX:+UseShenandoahGC
+ *                   TestMaybeNullUnsafeAccess
+ *
  */
 
 import sun.misc.Unsafe;
+
 import java.lang.reflect.Field;
+
 import com.oracle.java.testlibrary.*;
 
 public class TestMaybeNullUnsafeAccess {
@@ -53,9 +61,8 @@ public class TestMaybeNullUnsafeAccess {
     }
 
     static A test_helper(Object o) {
-        return (A)o;
+        return (A) o;
     }
-
 
     static int test(Object o) {
         int f = 0;

@@ -1,4 +1,3 @@
-
 /*
 /*
  * Copyright (c) 2013, Red Hat Inc.
@@ -35,7 +34,7 @@
 
 #include "compiler/disassembler.hpp"
 #include "gc_interface/collectedHeap.inline.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
@@ -1434,7 +1433,6 @@ void MacroAssembler::null_check(Register reg, int offset) {
     // provoke OS NULL exception if reg = NULL by
     // accessing M[reg] w/o changing any registers
     // NOTE: this is plenty to provoke a segv
-
     ldr(zr, Address(reg));
   } else {
     // nothing to do, (later) access of M[reg + offset]
@@ -2020,19 +2018,11 @@ void MacroAssembler::verify_heapbase(const char* msg) {
 }
 #endif
 
-void MacroAssembler::stop(const char* msg, Label *l) {
+void MacroAssembler::stop(const char* msg) {
   address ip = pc();
   pusha();
-  // We use movptr rather than mov here because we need code size not
-  // to depend on the pointer value of msg otherwise C2 can observe
-  // the same node with different sizes when emitted in a scratch
-  // buffer and later when emitted for good.
-  movptr(c_rarg0, (uintptr_t)msg);
-  if (! l) {
-    adr(c_rarg1, (address)ip);
-  } else {
-    adr(c_rarg1, *l);
-  }
+  mov(c_rarg0, (address)msg);
+  mov(c_rarg1, (address)ip);
   mov(c_rarg2, sp);
   mov(c_rarg3, CAST_FROM_FN_PTR(address, MacroAssembler::debug64));
   // call(c_rarg3);
@@ -2236,29 +2226,26 @@ void MacroAssembler::cmpxchg(Register addr, Register expected,
   }
 }
 
-void MacroAssembler::cmpxchg_oop_shenandoah(Register addr, Register expected,
-                                            Register new_val,
-                                            enum operand_size size,
-                                            bool acquire, bool release,
-                                            bool weak,
-                                            Register result, Register tmp2) {
-  assert(UseShenandoahGC, "only for shenandoah");
-  bool is_cae = (result != noreg);
-  bool is_narrow = (size == word);
+void MacroAssembler::cmpxchg_oop_shenandoah(Register addr, Register expected, Register new_val,
+                                            bool acquire, bool release, bool weak, bool is_cae,
+                                            Register result) {
 
-  if (! is_cae) result = rscratch1;
+  Register tmp1 = rscratch1;
+  Register tmp2 = rscratch2;
+  bool is_narrow = UseCompressedOops;
+  Assembler::operand_size size = is_narrow ? Assembler::word : Assembler::xword;
 
-  assert_different_registers(addr, expected, new_val, result, tmp2);
+  assert_different_registers(addr, expected, new_val, tmp1, tmp2);
 
   Label retry, done, fail;
 
   // CAS, using LL/SC pair.
   bind(retry);
-  load_exclusive(result, addr, size, acquire);
+  load_exclusive(tmp1, addr, size, acquire);
   if (is_narrow) {
-    cmpw(result, expected);
+    cmpw(tmp1, expected);
   } else {
-    cmp(result, expected);
+    cmp(tmp1, expected);
   }
   br(Assembler::NE, fail);
   store_exclusive(tmp2, new_val, addr, size, release);
@@ -2269,26 +2256,32 @@ void MacroAssembler::cmpxchg_oop_shenandoah(Register addr, Register expected,
   }
   b(done);
 
-  bind(fail);
-  // Check if rb(expected)==rb(result)
+   bind(fail);
+  // Check if rb(expected)==rb(tmp1)
   // Shuffle registers so that we have memory value ready for next expected.
   mov(tmp2, expected);
-  mov(expected, result);
+  mov(expected, tmp1);
   if (is_narrow) {
-    decode_heap_oop(result, result);
+    decode_heap_oop(tmp1, tmp1);
     decode_heap_oop(tmp2, tmp2);
   }
-  oopDesc::bs()->interpreter_read_barrier(this, result);
+  oopDesc::bs()->interpreter_read_barrier(this, tmp1);
   oopDesc::bs()->interpreter_read_barrier(this, tmp2);
-  cmp(result, tmp2);
+  cmp(tmp1, tmp2);
   // Retry with expected now being the value we just loaded from addr.
   br(Assembler::EQ, retry);
-  if (is_narrow && is_cae) {
+  if (is_cae && is_narrow) {
     // For cmp-and-exchange and narrow oops, we need to restore
     // the compressed old-value. We moved it to 'expected' a few lines up.
     mov(result, expected);
   }
   bind(done);
+
+  if (is_cae) {
+    mov(result, tmp1);
+  } else {
+    cset(result, Assembler::EQ);
+  }
 }
 
 static bool different(Register a, RegisterOrConstant b, Register c) {
@@ -2398,7 +2391,6 @@ void MacroAssembler::debug64(char* msg, int64_t pc, int64_t regs[])
       BytecodeCounter::print();
     }
 #endif
-
     if (os::message_box(msg, "Execution stopped, print registers?")) {
       ttyLocker ttyl;
       tty->print_cr(" pc = 0x%016lx", pc);
@@ -3633,6 +3625,12 @@ void MacroAssembler::store_heap_oop_null(Address dst) {
 }
 
 #if INCLUDE_ALL_GCS
+/*
+ * g1_write_barrier_pre -- G1GC pre-write barrier for store of new_val at
+ * store_addr.
+ *
+ * Allocates rscratch1
+ */
 void MacroAssembler::g1_write_barrier_pre(Register obj,
                                           Register pre_val,
                                           Register thread,
@@ -3650,10 +3648,8 @@ void MacroAssembler::g1_write_barrier_pre(Register obj,
   Label done;
   Label runtime;
 
-  assert(pre_val != noreg, "check this code");
-
-  if (obj != noreg)
-    assert_different_registers(obj, pre_val, tmp);
+  assert_different_registers(obj, pre_val, tmp, rscratch1);
+  assert(pre_val != noreg &&  tmp != noreg, "expecting a register");
 
   Address in_progress(thread, in_bytes(JavaThread::satb_mark_queue_offset() +
                                        PtrQueue::byte_offset_of_active()));
@@ -3727,6 +3723,12 @@ void MacroAssembler::g1_write_barrier_pre(Register obj,
   bind(done);
 }
 
+/*
+ * g1_write_barrier_post -- G1GC post-write barrier for store of new_val at
+ * store_addr
+ *
+ * Allocates rscratch1
+ */
 void MacroAssembler::g1_write_barrier_post(Register store_addr,
                                            Register new_val,
                                            Register thread,
@@ -3735,6 +3737,10 @@ void MacroAssembler::g1_write_barrier_post(Register store_addr,
 #ifdef _LP64
   assert(thread == rthread, "must be");
 #endif // _LP64
+  assert_different_registers(store_addr, new_val, thread, tmp, tmp2,
+                             rscratch1);
+  assert(store_addr != noreg && new_val != noreg && tmp != noreg
+         && tmp2 != noreg, "expecting a register");
 
   if (UseShenandoahGC) {
     // No need for this in Shenandoah.
@@ -3826,9 +3832,7 @@ void MacroAssembler::shenandoah_write_barrier(Register dst) {
   br(Assembler::EQ, done);
 
   // Heap is unstable, need to perform the read-barrier even if WB is inactive
-  if (ShenandoahWriteBarrierRB) {
-    ldr(dst, Address(dst, BrooksPointer::byte_offset()));
-  }
+  ldr(dst, Address(dst, ShenandoahBrooksPointer::byte_offset()));
 
   // Check for evacuation-in-progress and jump to WB slow-path if needed
   mov(rscratch2, ShenandoahHeap::EVACUATION);

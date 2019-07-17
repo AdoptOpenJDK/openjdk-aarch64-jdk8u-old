@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -27,7 +27,7 @@
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahConcurrentMark.inline.hpp"
 
-template<class T, UpdateRefsMode UPDATE_REFS, bool STRING_DEDUP>
+template<class T, UpdateRefsMode UPDATE_REFS, StringDedupMode STRING_DEDUP>
 inline void ShenandoahMarkRefsSuperClosure::work(T *p) {
   ShenandoahConcurrentMark::mark_through_ref<T, UPDATE_REFS, STRING_DEDUP>(p, _heap, _queue, _mark_context, _dedup_queue);
 }

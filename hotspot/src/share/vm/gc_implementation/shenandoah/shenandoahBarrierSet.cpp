@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2013, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -110,55 +110,13 @@ bool ShenandoahBarrierSet::is_aligned(HeapWord* hw) {
   return true;
 }
 
-void ShenandoahBarrierSet::read_prim_array(MemRegion mr) {
-  Unimplemented();
-}
-
-void ShenandoahBarrierSet::read_prim_field(HeapWord* hw, size_t s){
-  Unimplemented();
-}
-
 bool ShenandoahBarrierSet::read_prim_needs_barrier(HeapWord* hw, size_t s) {
   return false;
-}
-
-void ShenandoahBarrierSet::read_ref_array(MemRegion mr) {
-  Unimplemented();
 }
 
 void ShenandoahBarrierSet::read_ref_field(void* v) {
   //    tty->print_cr("read_ref_field: v = "PTR_FORMAT, v);
   // return *v;
-}
-
-bool ShenandoahBarrierSet::read_ref_needs_barrier(void* v) {
-  Unimplemented();
-  return false;
-}
-
-void ShenandoahBarrierSet::read_region(MemRegion mr) {
-  Unimplemented();
-}
-
-void ShenandoahBarrierSet::resize_covered_region(MemRegion mr) {
-  Unimplemented();
-}
-
-void ShenandoahBarrierSet::write_prim_array(MemRegion mr) {
-  Unimplemented();
-}
-
-void ShenandoahBarrierSet::write_prim_field(HeapWord* hw, size_t s , juint x, juint y) {
-  Unimplemented();
-}
-
-bool ShenandoahBarrierSet::write_prim_needs_barrier(HeapWord* hw, size_t s, juint x, juint y) {
-  Unimplemented();
-  return false;
-}
-
-void ShenandoahBarrierSet::write_ref_array_work(MemRegion r) {
-  ShouldNotReachHere();
 }
 
 template <class T>
@@ -235,10 +193,6 @@ void ShenandoahBarrierSet::write_ref_field_pre_work(oop* field, oop new_val) {
 
 void ShenandoahBarrierSet::write_ref_field_pre_work(narrowOop* field, oop new_val) {
   write_ref_field_pre_static(field, new_val);
-}
-
-void ShenandoahBarrierSet::write_ref_field_pre_work(void* field, oop new_val) {
-  guarantee(false, "Not needed");
 }
 
 void ShenandoahBarrierSet::write_ref_field_work(void* v, oop o, bool release) {
@@ -329,7 +283,7 @@ oop ShenandoahBarrierSet::write_barrier_mutator(oop obj) {
       ShenandoahHeapRegion* r = _heap->heap_region_containing(obj);
       assert(r->is_cset(), "sanity");
 
-      HeapWord* cur = (HeapWord*)obj + obj->size() + BrooksPointer::word_size();
+      HeapWord* cur = (HeapWord*)obj + obj->size() + ShenandoahBrooksPointer::word_size();
 
       size_t count = 0;
       while ((cur < r->top()) && ctx->is_marked(oop(cur)) && (count++ < max)) {
@@ -337,7 +291,7 @@ oop ShenandoahBarrierSet::write_barrier_mutator(oop obj) {
         if (oopDesc::unsafe_equals(cur_oop, resolve_forwarded_not_null(cur_oop))) {
           _heap->evacuate_object(cur_oop, thread, evac);
         }
-        cur = cur + cur_oop->size() + BrooksPointer::word_size();
+        cur = cur + cur_oop->size() + ShenandoahBrooksPointer::word_size();
       }
     }
 
@@ -347,7 +301,7 @@ oop ShenandoahBarrierSet::write_barrier_mutator(oop obj) {
 }
 
 oop ShenandoahBarrierSet::write_barrier(oop obj) {
-  if (ShenandoahWriteBarrier) {
+  if (ShenandoahWriteBarrier && _heap->has_forwarded_objects()) {
     if (!oopDesc::is_null(obj)) {
       bool evac_in_progress = _heap->is_evacuation_in_progress();
       oop fwd = resolve_forwarded_not_null(obj);

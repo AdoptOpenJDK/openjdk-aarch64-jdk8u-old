@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -21,8 +21,8 @@
  *
  */
 
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahBarrierSet.inline.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 
 #include "asm/macroAssembler.hpp"
 #include "interpreter/interpreter.hpp"
@@ -41,7 +41,7 @@ void ShenandoahBarrierSet::interpreter_read_barrier(MacroAssembler* masm, Regist
 
 void ShenandoahBarrierSet::interpreter_read_barrier_not_null(MacroAssembler* masm, Register dst) {
   if (ShenandoahReadBarrier) {
-    __ ldr(dst, Address(dst, BrooksPointer::byte_offset()));
+    __ ldr(dst, Address(dst, ShenandoahBrooksPointer::byte_offset()));
   }
 }
 
@@ -64,9 +64,7 @@ void ShenandoahBarrierSet::interpreter_write_barrier(MacroAssembler* masm, Regis
   __ br(Assembler::EQ, done);
 
   // Heap is unstable, need to perform the read-barrier even if WB is inactive
-  if (ShenandoahWriteBarrierRB) {
-    __ ldr(dst, Address(dst, BrooksPointer::byte_offset()));
-  }
+  __ ldr(dst, Address(dst, ShenandoahBrooksPointer::byte_offset()));
 
   // Check for evacuation-in-progress and jump to WB slow-path if needed
   __ mov(rscratch2, ShenandoahHeap::EVACUATION);
@@ -98,7 +96,7 @@ void ShenandoahBarrierSet::interpreter_write_barrier(MacroAssembler* masm, Regis
 }
 
 void ShenandoahHeap::compile_prepare_oop(MacroAssembler* masm, Register obj) {
-  __ add(obj, obj, BrooksPointer::byte_size());
+  __ add(obj, obj, ShenandoahBrooksPointer::byte_size());
   __ str(obj, Address(obj, -1 * HeapWordSize));
 }
 

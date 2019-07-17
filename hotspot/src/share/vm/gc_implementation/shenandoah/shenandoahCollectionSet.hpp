@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -21,23 +21,22 @@
  *
  */
 
-
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHCOLLECTIONSET_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHCOLLECTIONSET_HPP
 
 #include "memory/allocation.hpp"
-
-class ShenandoahHeap;
-class ShenandoahHeapRegion;
+#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
+#include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 
 class ShenandoahCollectionSet : public CHeapObj<mtGC> {
   friend class ShenandoahHeap;
 private:
   size_t const          _map_size;
   size_t const          _region_size_bytes_shift;
-  jbyte* const          _cset_map;
+  ReservedSpace         _map_space;
+  char* const           _cset_map;
   // Bias cset map's base address for fast test if an oop is in cset
-  jbyte* const          _biased_cset_map;
+  char* const           _biased_cset_map;
 
   ShenandoahHeap* const _heap;
 
@@ -46,9 +45,12 @@ private:
   size_t                _used;
   size_t                _region_count;
 
+  char _pad0[DEFAULT_CACHE_LINE_SIZE];
   volatile jint         _current_index;
+  char _pad1[DEFAULT_CACHE_LINE_SIZE];
+
 public:
-  ShenandoahCollectionSet(ShenandoahHeap* heap, HeapWord* heap_base);
+  ShenandoahCollectionSet(ShenandoahHeap* heap, char* heap_base, size_t size);
 
   // Add region to collection set
   void add_region(ShenandoahHeapRegion* r);
@@ -86,7 +88,10 @@ public:
   void clear();
 
 private:
-  jbyte* biased_map_address() const {
+  char* map_address() const {
+    return _cset_map;
+  }
+  char* biased_map_address() const {
     return _biased_cset_map;
   }
 };

@@ -25,8 +25,8 @@
 #include "precompiled.hpp"
 #include "asm/macroAssembler.hpp"
 #include "asm/macroAssembler.inline.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahBarrierSet.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "interpreter/interpreter.hpp"
@@ -4146,7 +4146,7 @@ class StubGenerator: public StubCodeGenerator {
     // entry points that are platform specific
     if (UseShenandoahGC && ShenandoahWriteBarrier) {
          StubRoutines::x86::_shenandoah_wb = generate_shenandoah_wb(false, true);
-         StubRoutines::_shenandoah_wb_C = generate_shenandoah_wb(true, !ShenandoahWriteBarrierCsetTestInIR);
+         StubRoutines::_shenandoah_wb_C = generate_shenandoah_wb(true, false);
     }
     StubRoutines::x86::_f2i_fixup = generate_f2i_fixup();
     StubRoutines::x86::_f2l_fixup = generate_f2l_fixup();

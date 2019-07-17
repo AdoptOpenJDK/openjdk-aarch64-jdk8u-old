@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2019, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -28,6 +28,7 @@
 #include "utilities/taskqueue.hpp"
 #include "runtime/mutex.hpp"
 
+class ShenandoahHeap;
 class Thread;
 
 template<class E, MEMFLAGS F, unsigned int N = TASKQUEUE_SIZE>
@@ -40,20 +41,16 @@ public:
 
   TASKQUEUE_STATS_ONLY(using taskqueue_t::stats;)
 
-  // Push task t onto:
-  //   - first, try buffer;
-  //   - then, try the queue;
-  //   - then, overflow stack.
-  // Return true.
+  // Push task t into the queue. Returns true on success.
   inline bool push(E t);
 
-  // Attempt to pop from the buffer; return true if anything was popped.
-  inline bool pop_buffer(E &t);
+  // Attempt to pop from the queue. Returns true on success.
+  inline bool pop(E &t);
 
-  inline void clear_buffer()  { _buf_empty = true; }
-  inline bool buffer_empty()  const { return _buf_empty; }
+  inline void clear();
+
   inline bool is_empty()        const {
-    return taskqueue_t::is_empty() && buffer_empty();
+    return _buf_empty && taskqueue_t::is_empty();
   }
 
 private:
@@ -120,36 +117,46 @@ private:
 // some bits back if chunks are counted in ObjArrayMarkingStride units.
 //
 // There is also a fallback version that uses plain fields, when we don't have enough space to steal the
-// bits from the native pointer. It is useful to debug the _LP64 version.
+// bits from the native pointer. It is useful to debug the optimized version.
 //
+
+#ifdef _MSC_VER
+#pragma warning(push)
+// warning C4522: multiple assignment operators specified
+#pragma warning( disable:4522 )
+#endif
+
 #ifdef _LP64
+#define SHENANDOAH_OPTIMIZED_OBJTASK 1
+#else
+#define SHENANDOAH_OPTIMIZED_OBJTASK 0
+#endif
+
+#if SHENANDOAH_OPTIMIZED_OBJTASK
 class ObjArrayChunkedTask
 {
 public:
   enum {
     chunk_bits   = 10,
     pow_bits     = 5,
-    oop_bits     = sizeof(uintptr_t)*8 - chunk_bits - pow_bits,
+    oop_bits     = sizeof(uintptr_t)*8 - chunk_bits - pow_bits
   };
   enum {
     oop_shift    = 0,
     pow_shift    = oop_shift + oop_bits,
-    chunk_shift  = pow_shift + pow_bits,
+    chunk_shift  = pow_shift + pow_bits
   };
 
 public:
   ObjArrayChunkedTask(oop o = NULL) {
-    _obj = ((uintptr_t)(void*) o) << oop_shift;
+    assert(oopDesc::unsafe_equals(decode_oop(encode_oop(o)), o), err_msg("oop can be encoded: " PTR_FORMAT, p2i(o)));
+    _obj = encode_oop(o);
   }
-  ObjArrayChunkedTask(oop o, int chunk, int mult) {
-    assert(0 <= chunk && chunk < nth_bit(chunk_bits), err_msg("chunk is sane: %d", chunk));
-    assert(0 <= mult && mult < nth_bit(pow_bits), err_msg("pow is sane: %d", mult));
-    uintptr_t t_b = ((uintptr_t) chunk) << chunk_shift;
-    uintptr_t t_m = ((uintptr_t) mult) << pow_shift;
-    uintptr_t obj = (uintptr_t)(void*)o;
-    assert(obj < nth_bit(oop_bits), err_msg("obj ref is sane: " PTR_FORMAT, obj));
-    intptr_t t_o = obj << oop_shift;
-    _obj = t_o | t_m | t_b;
+  ObjArrayChunkedTask(oop o, int chunk, int pow) {
+    assert(oopDesc::unsafe_equals(decode_oop(encode_oop(o)), o), err_msg("oop can be encoded: " PTR_FORMAT, p2i(o)));
+    assert(decode_chunk(encode_chunk(chunk)) == chunk, err_msg("chunk can be encoded: %d", chunk));
+    assert(decode_pow(encode_pow(pow)) == pow, err_msg("pow can be encoded: %d", pow));
+    _obj = encode_oop(o) | encode_chunk(chunk) | encode_pow(pow);
   }
   ObjArrayChunkedTask(const ObjArrayChunkedTask& t): _obj(t._obj) { }
 
@@ -163,14 +170,38 @@ public:
     return *this;
   }
 
-  inline oop obj()   const { return (oop) reinterpret_cast<void*>((_obj >> oop_shift) & right_n_bits(oop_bits)); }
-  inline int chunk() const { return (int) (_obj >> chunk_shift) & right_n_bits(chunk_bits); }
-  inline int pow()   const { return (int) ((_obj >> pow_shift) & right_n_bits(pow_bits)); }
+  inline oop decode_oop(uintptr_t val) const {
+    return (oop) reinterpret_cast<void*>((val >> oop_shift) & right_n_bits(oop_bits));
+  }
+
+  inline int decode_chunk(uintptr_t val) const {
+    return (int) ((val >> chunk_shift) & right_n_bits(chunk_bits));
+  }
+
+  inline int decode_pow(uintptr_t val) const {
+    return (int) ((val >> pow_shift) & right_n_bits(pow_bits));
+  }
+
+  inline uintptr_t encode_oop(oop obj) const {
+    return ((uintptr_t)(void*) obj) << oop_shift;
+  }
+
+  inline uintptr_t encode_chunk(int chunk) const {
+    return ((uintptr_t) chunk) << chunk_shift;
+  }
+
+  inline uintptr_t encode_pow(int pow) const {
+    return ((uintptr_t) pow) << pow_shift;
+  }
+
+  inline oop obj()   const { return decode_oop(_obj);   }
+  inline int chunk() const { return decode_chunk(_obj); }
+  inline int pow()   const { return decode_pow(_obj);   }
   inline bool is_not_chunked() const { return (_obj & ~right_n_bits(oop_bits + pow_bits)) == 0; }
 
   DEBUG_ONLY(bool is_valid() const); // Tasks to be pushed/popped must be valid.
 
-  static size_t max_addressable() {
+  static uintptr_t max_addressable() {
     return nth_bit(oop_bits);
   }
 
@@ -187,7 +218,7 @@ class ObjArrayChunkedTask
 public:
   enum {
     chunk_bits  = 10,
-    pow_bits    = 5,
+    pow_bits    = 5
   };
 public:
   ObjArrayChunkedTask(oop o = NULL, int chunk = 0, int pow = 0): _obj(o) {
@@ -233,6 +264,10 @@ private:
   int _chunk;
   int _pow;
 };
+#endif // SHENANDOAH_OPTIMIZED_OBJTASK
+
+#ifdef _MSC_VER
+#pragma warning(pop)
 #endif
 
 typedef ObjArrayChunkedTask ShenandoahMarkTask;
@@ -242,7 +277,10 @@ typedef Padded<ShenandoahBufferedOverflowTaskQueue> ShenandoahObjToScanQueue;
 template <class T, MEMFLAGS F>
 class ParallelClaimableQueueSet: public GenericTaskQueueSet<T, F> {
 private:
+  char _pad0[DEFAULT_CACHE_LINE_SIZE];
   volatile jint     _claimed_index;
+  char _pad1[DEFAULT_CACHE_LINE_SIZE];
+
   debug_only(uint   _reserved;  )
 
 public:
@@ -266,7 +304,6 @@ public:
   debug_only(uint get_reserved() const { return (uint)_reserved; })
 };
 
-
 template <class T, MEMFLAGS F>
 T* ParallelClaimableQueueSet<T, F>::claim_next() {
   jint size = (jint)GenericTaskQueueSet<T, F>::size();
@@ -285,10 +322,8 @@ T* ParallelClaimableQueueSet<T, F>::claim_next() {
 }
 
 class ShenandoahObjToScanQueueSet: public ParallelClaimableQueueSet<ShenandoahObjToScanQueue, mtGC> {
-
 public:
-  ShenandoahObjToScanQueueSet(int n) : ParallelClaimableQueueSet<ShenandoahObjToScanQueue, mtGC>(n) {
-  }
+  ShenandoahObjToScanQueueSet(int n) : ParallelClaimableQueueSet<ShenandoahObjToScanQueue, mtGC>(n) {}
 
   bool is_empty();
   void clear();
@@ -300,6 +335,14 @@ public:
 #endif // TASKQUEUE_STATS
 };
 
+class ShenandoahTerminatorTerminator : public TerminatorTerminator {
+private:
+  ShenandoahHeap* const _heap;
+public:
+  ShenandoahTerminatorTerminator(ShenandoahHeap* const heap) : _heap(heap) { }
+  // return true, terminates immediately, even if there's remaining work left
+  virtual bool should_exit_termination();
+};
 
 /*
  * This is an enhanced implementation of Google's work stealing
@@ -318,7 +361,6 @@ private:
   Monitor*    _blocker;
   Thread*     _spin_master;
 
-
 public:
   ShenandoahTaskTerminator(uint n_threads, TaskQueueSetSuper* queue_set) :
     ParallelTaskTerminator(n_threads, queue_set), _spin_master(NULL) {
@@ -330,27 +372,24 @@ public:
     delete _blocker;
   }
 
-  bool offer_termination(TerminatorTerminator* terminator);
+  bool offer_termination(ShenandoahTerminatorTerminator* terminator);
+  bool offer_termination() { return offer_termination((ShenandoahTerminatorTerminator*)NULL); }
+
+private:
+  bool offer_termination(TerminatorTerminator* terminator) {
+    ShouldNotReachHere();
+    return false;
+  }
 
 private:
   size_t tasks_in_queue_set() { return _queue_set->tasks(); }
-
 
   /*
    * Perform spin-master task.
    * return true if termination condition is detected
    * otherwise, return false
    */
-  bool do_spin_master_work(TerminatorTerminator* terminator);
-};
-
-class ShenandoahCancelledTerminatorTerminator : public TerminatorTerminator {
-  virtual bool should_exit_termination() {
-    return false;
-  }
-  virtual bool should_force_termination() {
-    return true;
-  }
+  bool do_spin_master_work(ShenandoahTerminatorTerminator* terminator);
 };
 
 #endif // SHARE_VM_GC_SHENANDOAH_SHENANDOAHTASKQUEUE_HPP

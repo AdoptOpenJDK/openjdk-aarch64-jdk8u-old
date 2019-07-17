@@ -27,8 +27,8 @@
 #include "precompiled.hpp"
 #include "asm/macroAssembler.hpp"
 #include "asm/macroAssembler.inline.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahBarrierSet.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "interpreter/interpreter.hpp"
@@ -689,6 +689,7 @@ class StubGenerator: public StubCodeGenerator {
   void  gen_write_ref_array_pre_barrier(Register addr, Register count, bool dest_uninitialized) {
     BarrierSet* bs = Universe::heap()->barrier_set();
     switch (bs->kind()) {
+    case BarrierSet::G1SATBCT:
     case BarrierSet::G1SATBCTLogging:
     case BarrierSet::ShenandoahBarrierSet:
       // Don't generate the call if we statically know that the target is uninitialized
@@ -722,7 +723,6 @@ class StubGenerator: public StubCodeGenerator {
     }
   }
 
-
   //
   // Generate code for an array write post barrier
   //
@@ -740,6 +740,7 @@ class StubGenerator: public StubCodeGenerator {
       case BarrierSet::G1SATBCT:
       case BarrierSet::G1SATBCTLogging:
       case BarrierSet::ShenandoahBarrierSet:
+
         {
 	  __ push_call_clobbered_registers();
           // must compute element count unless barrier set interface is changed (other platforms supply count)
@@ -2544,11 +2545,11 @@ class StubGenerator: public StubCodeGenerator {
                                      /*dest_uninitialized*/false);
       // Aligned versions without pre-barriers
       StubRoutines::_arrayof_oop_disjoint_arraycopy_uninit
-        = generate_disjoint_oop_copy(aligned, &entry, "arrayof_oop_disjoint_arraycopy_uninit",
-                                     /*dest_uninitialized*/true);
+	= generate_disjoint_oop_copy(aligned, &entry, "arrayof_oop_disjoint_arraycopy_uninit",
+				     /*dest_uninitialized*/true);
       StubRoutines::_arrayof_oop_arraycopy_uninit
-        = generate_conjoint_oop_copy(aligned, entry, NULL, "arrayof_oop_arraycopy_uninit",
-                                     /*dest_uninitialized*/true);
+	= generate_conjoint_oop_copy(aligned, entry, NULL, "arrayof_oop_arraycopy_uninit",
+				     /*dest_uninitialized*/true);
     }
 
     StubRoutines::_oop_disjoint_arraycopy            = StubRoutines::_arrayof_oop_disjoint_arraycopy;
@@ -4337,7 +4338,7 @@ class StubGenerator: public StubCodeGenerator {
 
     if (UseShenandoahGC && ShenandoahWriteBarrier) {
       StubRoutines::aarch64::_shenandoah_wb = generate_shenandoah_wb(false, true);
-      StubRoutines::_shenandoah_wb_C = generate_shenandoah_wb(true, !ShenandoahWriteBarrierCsetTestInIR);
+      StubRoutines::_shenandoah_wb_C = generate_shenandoah_wb(true, false);
     }
 
 #ifndef BUILTIN_SIM

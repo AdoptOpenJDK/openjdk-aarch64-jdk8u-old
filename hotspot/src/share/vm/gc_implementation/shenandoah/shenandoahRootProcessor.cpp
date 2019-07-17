@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -23,20 +23,22 @@
 
 #include "precompiled.hpp"
 
-#include "classfile/javaClasses.hpp"
+#include "classfile/classLoaderData.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "code/codeCache.hpp"
+#include "gc_implementation/shenandoah/shenandoahClosures.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahRootProcessor.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahFreeSet.hpp"
-#include "gc_implementation/shenandoah/shenandoahBarrierSet.hpp"
 #include "gc_implementation/shenandoah/shenandoahCollectorPolicy.hpp"
 #include "gc_implementation/shenandoah/shenandoahPhaseTimings.hpp"
 #include "gc_implementation/shenandoah/shenandoahStringDedup.hpp"
+#include "gc_implementation/shenandoah/shenandoahTimingTracker.hpp"
 #include "memory/allocation.inline.hpp"
 #include "runtime/fprofiler.hpp"
-#include "runtime/mutex.hpp"
+#include "memory/resourceArea.hpp"
+#include "runtime/thread.hpp"
 #include "services/management.hpp"
 
 ShenandoahRootProcessor::ShenandoahRootProcessor(ShenandoahHeap* heap, uint n_workers,
@@ -62,7 +64,7 @@ ShenandoahRootProcessor::~ShenandoahRootProcessor() {
 }
 
 void ShenandoahRootProcessor::process_all_roots_slow(OopClosure* oops) {
-  ShenandoahAlwaysTrueClosure always_true;
+  AlwaysTrueClosure always_true;
 
   CLDToOopClosure clds(oops);
   CodeBlobToOopClosure blobs(oops, !CodeBlobToOopClosure::FixRelocations);
@@ -151,9 +153,7 @@ void ShenandoahRootProcessor::process_vm_roots(OopClosure* strong_roots,
                                                OopClosure* jni_weak_roots,
                                                uint worker_id)
 {
-  ShenandoahHeap* heap = ShenandoahHeap::heap();
-
-  ShenandoahWorkerTimings* worker_times = heap->phase_timings()->worker_times();
+  ShenandoahWorkerTimings* worker_times = ShenandoahHeap::heap()->phase_timings()->worker_times();
   if (!_process_strong_tasks->is_task_claimed(SHENANDOAH_RP_PS_Universe_oops_do)) {
     ShenandoahWorkerTimingsTracker timer(worker_times, ShenandoahPhaseTimings::UniverseRoots, worker_id);
     Universe::oops_do(strong_roots);
@@ -181,18 +181,9 @@ void ShenandoahRootProcessor::process_vm_roots(OopClosure* strong_roots,
     SystemDictionary::roots_oops_do(strong_roots, weak_roots);
   }
 
-  // Note: Workaround bugs with JNI weak reference handling during concurrent cycles,
-  // by pessimistically assuming all JNI weak refs are alive. Achieve this by passing
-  // stronger closure, where weaker one would suffice otherwise. This effectively makes
-  // JNI weak refs non-reclaimable by concurrent GC, but they would be reclaimed by
-  // STW GCs, that are not affected by the bug, nevertheless.
-  if (!heap->is_full_gc_in_progress() && !heap->is_degenerated_gc_in_progress()) {
-    jni_weak_roots = strong_roots;
-  }
-
   if (jni_weak_roots != NULL) {
     if (!_process_strong_tasks->is_task_claimed(SHENANDOAH_RP_PS_JNIHandles_weak_oops_do)) {
-      ShenandoahAlwaysTrueClosure always_true;
+      AlwaysTrueClosure always_true;
       ShenandoahWorkerTimingsTracker timer(worker_times, ShenandoahPhaseTimings::JNIWeakRoots, worker_id);
       JNIHandles::weak_oops_do(&always_true, jni_weak_roots);
     }
@@ -220,6 +211,7 @@ void ShenandoahRootProcessor::process_vm_roots(OopClosure* strong_roots,
 }
 
 ShenandoahRootEvacuator::ShenandoahRootEvacuator(ShenandoahHeap* heap, uint n_workers, ShenandoahPhaseTimings::Phase phase) :
+  _evacuation_tasks(new SubTasksDone(SHENANDOAH_EVAC_NumElements)),
   _srs(heap, true),
   _phase(phase),
   _coderoots_cset_iterator(ShenandoahCodeRoots::cset_iterator())
@@ -229,6 +221,7 @@ ShenandoahRootEvacuator::ShenandoahRootEvacuator(ShenandoahHeap* heap, uint n_wo
 }
 
 ShenandoahRootEvacuator::~ShenandoahRootEvacuator() {
+  delete _evacuation_tasks;
   ShenandoahHeap::heap()->phase_timings()->record_workers_end(_phase);
 }
 
@@ -266,6 +259,12 @@ void ShenandoahRootEvacuator::process_evacuate_roots(OopClosure* oops,
   if (blobs != NULL) {
     ShenandoahWorkerTimingsTracker timer(worker_times, ShenandoahPhaseTimings::CodeCacheRoots, worker_id);
     _coderoots_cset_iterator.possibly_parallel_blobs_do(blobs);
+  }
+
+  if (_evacuation_tasks->is_task_claimed(SHENANDOAH_EVAC_jvmti_oops_do)) {
+    ShenandoahForwardedIsAliveClosure is_alive;
+    ShenandoahWorkerTimingsTracker timer(worker_times, ShenandoahPhaseTimings::JVMTIRoots, worker_id);
+    JvmtiExport::weak_oops_do(&is_alive, oops);
   }
 }
 

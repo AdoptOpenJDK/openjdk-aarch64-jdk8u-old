@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -21,12 +21,10 @@
  *
  */
 
-
 #ifndef SHARE_VM_GC_SHENANDOAH_SHENANDOAHWORKERPOLICY_HPP
 #define SHARE_VM_GC_SHENANDOAH_SHENANDOAHWORKERPOLICY_HPP
 
 #include "memory/allocation.hpp"
-
 
 class ShenandoahWorkerPolicy : AllStatic {
 private:
@@ -38,6 +36,7 @@ private:
   static uint _prev_conc_update_ref;
   static uint _prev_par_update_ref;
   static uint _prev_conc_cleanup;
+  static uint _prev_conc_reset;
 
 public:
   // Calculate the number of workers for initial marking
@@ -69,6 +68,9 @@ public:
 
   // Calculate workers for concurrent cleanup
   static uint calc_workers_for_conc_cleanup();
+
+  // Calculate workers for concurrent reset
+  static uint calc_workers_for_conc_reset();
 };
 
 #endif // SHARE_VM_GC_SHENANDOAH_SHENANDOAHWORKERPOLICY_HPP

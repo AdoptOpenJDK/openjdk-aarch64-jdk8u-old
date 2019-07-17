@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,7 +24,7 @@
 #ifndef SHARE_VM_OPTO_SHENANDOAH_SUPPORT_HPP
 #define SHARE_VM_OPTO_SHENANDOAH_SUPPORT_HPP
 
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 #include "memory/allocation.hpp"
 #include "opto/addnode.hpp"
 #include "opto/graphKit.hpp"
@@ -45,7 +45,7 @@ private:
     ShenandoahLoad,
     ShenandoahStore,
     ShenandoahValue,
-    ShenandoahNone,
+    ShenandoahNone
   };
 
   static bool verify_helper(Node* in, Node_Stack& phis, VectorSet& visited, verify_type t, bool trace, Unique_Node_List& barriers_used);
@@ -73,7 +73,7 @@ public:
   static Node* skip_through_barrier(Node* n);
 
   static const TypeOopPtr* brooks_pointer_type(const Type* t) {
-    return t->is_oopptr()->cast_to_nonconst()->add_offset(BrooksPointer::byte_offset())->is_oopptr();
+    return t->is_oopptr()->cast_to_nonconst()->add_offset(ShenandoahBrooksPointer::byte_offset())->is_oopptr();
   }
 
   virtual const TypePtr* adr_type() const {
@@ -82,7 +82,7 @@ public:
     }
     //const TypePtr* adr_type = in(MemNode::Address)->bottom_type()->is_ptr();
     const TypePtr* adr_type = brooks_pointer_type(bottom_type());
-    assert(adr_type->offset() == BrooksPointer::byte_offset(), "sane offset");
+    assert(adr_type->offset() == ShenandoahBrooksPointer::byte_offset(), "sane offset");
     assert(Compile::current()->alias_type(adr_type)->is_rewritable(), "brooks ptr must be rewritable");
     return adr_type;
   }

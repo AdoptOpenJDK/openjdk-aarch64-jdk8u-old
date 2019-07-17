@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -33,7 +33,7 @@ bool ShenandoahBarrierSet::need_update_refs_barrier() {
 }
 
 inline oop ShenandoahBarrierSet::resolve_forwarded_not_null(oop p) {
-  return BrooksPointer::forwardee(p);
+  return ShenandoahBrooksPointer::forwardee(p);
 }
 
 inline oop ShenandoahBarrierSet::resolve_forwarded(oop p) {

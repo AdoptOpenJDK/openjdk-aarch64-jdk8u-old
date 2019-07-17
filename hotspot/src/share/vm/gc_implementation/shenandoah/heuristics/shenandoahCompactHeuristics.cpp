@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,6 +22,7 @@
  */
 
 #include "precompiled.hpp"
+
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
 #include "gc_implementation/shenandoah/heuristics/shenandoahCompactHeuristics.hpp"
 #include "gc_implementation/shenandoah/shenandoahFreeSet.hpp"
@@ -29,20 +30,39 @@
 #include "gc_implementation/shenandoah/shenandoahLogging.hpp"
 
 ShenandoahCompactHeuristics::ShenandoahCompactHeuristics() : ShenandoahHeuristics() {
+  SHENANDOAH_ERGO_ENABLE_FLAG(ExplicitGCInvokesConcurrent);
+  SHENANDOAH_ERGO_ENABLE_FLAG(ShenandoahImplicitGCInvokesConcurrent);
   SHENANDOAH_ERGO_ENABLE_FLAG(ShenandoahUncommit);
   SHENANDOAH_ERGO_ENABLE_FLAG(ShenandoahAlwaysClearSoftRefs);
   SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahAllocationThreshold,  10);
   SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahImmediateThreshold,   100);
-  SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahUncommitDelay,        5000);
+  SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahUncommitDelay,        1000);
   SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahGuaranteedGCInterval, 30000);
-  SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahGarbageThreshold,     20);
+  SHENANDOAH_ERGO_OVERRIDE_DEFAULT(ShenandoahGarbageThreshold,     10);
+
+  // Final configuration checks
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahSATBBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahReadBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahWriteBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCASBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahAcmpBarrier);
+  SHENANDOAH_CHECK_FLAG_SET(ShenandoahCloneBarrier);
 }
 
 bool ShenandoahCompactHeuristics::should_start_normal_gc() const {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
 
+  size_t capacity = heap->max_capacity();
   size_t available = heap->free_set()->available();
-  size_t threshold_bytes_allocated = heap->capacity() * ShenandoahAllocationThreshold / 100;
+
+  size_t threshold_bytes_allocated = capacity / 100 * ShenandoahAllocationThreshold;
+  size_t min_threshold = capacity / 100 * ShenandoahMinFreeThreshold;
+
+  if (available < min_threshold) {
+    log_info(gc)("Trigger: Free (" SIZE_FORMAT "M) is below minimum threshold (" SIZE_FORMAT "M)",
+                 available / M, min_threshold / M);
+    return true;
+  }
 
   if (available < threshold_bytes_allocated) {
     log_info(gc)("Trigger: Free (" SIZE_FORMAT "M) is lower than allocated recently (" SIZE_FORMAT "M)",
@@ -63,7 +83,6 @@ bool ShenandoahCompactHeuristics::should_start_normal_gc() const {
 void ShenandoahCompactHeuristics::choose_collection_set_from_regiondata(ShenandoahCollectionSet* cset,
                                                                         RegionData* data, size_t size,
                                                                         size_t actual_free) {
-
   // Do not select too large CSet that would overflow the available free space
   size_t max_cset = actual_free * 3 / 4;
 

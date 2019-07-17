@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2015, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -29,8 +29,10 @@
 #include "gc_implementation/shenandoah/shenandoahPacer.inline.hpp"
 #include "runtime/atomic.hpp"
 
-HeapWord* ShenandoahHeapRegion::allocate(size_t size, ShenandoahHeap::AllocType type) {
+HeapWord* ShenandoahHeapRegion::allocate(size_t size, ShenandoahAllocRequest::Type type) {
   _heap->assert_heaplock_or_safepoint();
+
+  assert(is_object_aligned((intptr_t)size), err_msg("alloc size breaks alignment: " SIZE_FORMAT, size));
 
   HeapWord* obj = top();
   if (pointer_delta(end(), obj) >= size) {
@@ -39,7 +41,9 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, ShenandoahHeap::AllocType 
 
     HeapWord* new_top = obj + size;
     set_top(new_top);
-    assert(is_aligned(obj) && is_aligned(new_top), "checking alignment");
+
+    assert(is_object_aligned((intptr_t)new_top), err_msg("new top breaks alignment: " PTR_FORMAT, p2i(new_top)));
+    assert(is_object_aligned((intptr_t)obj),     err_msg("obj is not aligned: "       PTR_FORMAT, p2i(obj)));
 
     return obj;
   } else {
@@ -47,16 +51,16 @@ HeapWord* ShenandoahHeapRegion::allocate(size_t size, ShenandoahHeap::AllocType 
   }
 }
 
-inline void ShenandoahHeapRegion::adjust_alloc_metadata(ShenandoahHeap::AllocType type, size_t size) {
+inline void ShenandoahHeapRegion::adjust_alloc_metadata(ShenandoahAllocRequest::Type type, size_t size) {
   switch (type) {
-    case ShenandoahHeap::_alloc_shared:
-    case ShenandoahHeap::_alloc_shared_gc:
+    case ShenandoahAllocRequest::_alloc_shared:
+    case ShenandoahAllocRequest::_alloc_shared_gc:
       _shared_allocs += size;
       break;
-    case ShenandoahHeap::_alloc_tlab:
+    case ShenandoahAllocRequest::_alloc_tlab:
       _tlab_allocs += size;
       break;
-    case ShenandoahHeap::_alloc_gclab:
+    case ShenandoahAllocRequest::_alloc_gclab:
       _gclab_allocs += size;
       break;
     default:
@@ -71,7 +75,7 @@ inline void ShenandoahHeapRegion::increase_live_data_alloc_words(size_t s) {
 inline void ShenandoahHeapRegion::increase_live_data_gc_words(size_t s) {
   internal_increase_live_data(s);
   if (ShenandoahPacing) {
-    _pacer->report_mark(s);
+    _heap->pacer()->report_mark(s);
   }
 }
 

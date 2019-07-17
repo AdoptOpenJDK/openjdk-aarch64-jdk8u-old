@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,6 +39,7 @@ class ShenandoahGCTraceTime {
   GCTimer* _timer;
   Ticks _start_counter;
   size_t _bytes_before;
+  GCId _gc_id;
 
  public:
   ShenandoahGCTraceTime(const char* title, bool doit, GCTimer* timer, GCId gc_id, bool print_heap = false);

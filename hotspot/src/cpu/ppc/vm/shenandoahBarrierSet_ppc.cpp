@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,8 +22,8 @@
  */
 
 #include "precompiled.hpp"
-#include "gc_implementation/shenandoah/brooksPointer.hpp"
 #include "gc_implementation/shenandoah/shenandoahBarrierSet.inline.hpp"
+#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
 
 #include "asm/macroAssembler.hpp"
 #include "interpreter/interpreter.hpp"

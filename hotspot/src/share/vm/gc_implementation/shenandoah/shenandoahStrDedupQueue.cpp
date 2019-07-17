@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2018, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2017, 2019, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -24,7 +24,6 @@
 #include "precompiled.hpp"
 
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
-#include "gc_implementation/shenandoah/shenandoahStrDedupQueue.hpp"
 #include "gc_implementation/shenandoah/shenandoahStrDedupQueue.inline.hpp"
 #include "gc_implementation/shenandoah/shenandoahStringDedup.hpp"
 #include "memory/allocation.inline.hpp"
@@ -89,7 +88,6 @@ ShenandoahStrDedupQueueSet::~ShenandoahStrDedupQueueSet() {
 
   delete _lock;
 }
-
 
 size_t ShenandoahStrDedupQueueSet::claim() {
   size_t index = (size_t)Atomic::add(1, (volatile jint*)&_claimed) - 1;

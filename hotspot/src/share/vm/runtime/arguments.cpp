@@ -65,6 +65,7 @@
 #include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahLogging.hpp"
+#include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #endif // INCLUDE_ALL_GCS
 
 // Note: This is a special bug reporting site for the JVM
@@ -1760,16 +1761,21 @@ void Arguments::set_shenandoah_gc_flags() {
   }
 #endif
 
-#ifdef _LP64
-  // The optimized ObjArrayChunkedTask takes some bits away from the full 64 addressable
-  // bits, fail if we ever attempt to address more than we can. Only valid on 64bit.
-  if (MaxHeapSize >= ObjArrayChunkedTask::max_addressable()) {
-    jio_fprintf(defaultStream::error_stream(),
-                "Shenandoah GC cannot address more than " SIZE_FORMAT " bytes, and " SIZE_FORMAT " bytes heap requested.",
-                ObjArrayChunkedTask::max_addressable(), MaxHeapSize);
-    vm_exit(1);
+#if INCLUDE_ALL_GCS
+  if (UseLargePages && (MaxHeapSize / os::large_page_size()) < ShenandoahHeapRegion::MIN_NUM_REGIONS) {
+    warning("Large pages size (" SIZE_FORMAT "K) is too large to afford page-sized regions, disabling uncommit",
+            os::large_page_size() / K);
+    FLAG_SET_DEFAULT(ShenandoahUncommit, false);
   }
 #endif
+
+  // Enable NUMA by default. While Shenandoah is not NUMA-aware, enabling NUMA makes
+  // storage allocation code NUMA-aware, and NUMA interleaving makes the storage
+  // allocated in consistent manner (interleaving) to minimize run-to-run variance.
+  if (FLAG_IS_DEFAULT(UseNUMA)) {
+    FLAG_SET_DEFAULT(UseNUMA, true);
+    FLAG_SET_DEFAULT(UseNUMAInterleaving, true);
+  }
 
   FLAG_SET_DEFAULT(ParallelGCThreads,
                    Abstract_VM_Version::parallel_worker_threads());
@@ -1833,6 +1839,13 @@ void Arguments::set_shenandoah_gc_flags() {
     FLAG_SET_DEFAULT(ShenandoahUncommit, false);
   }
 
+  if ((InitialHeapSize == MaxHeapSize) && ShenandoahUncommit) {
+    if (PrintGC) {
+      tty->print_cr("Min heap equals to max heap, disabling ShenandoahUncommit");
+    }
+    FLAG_SET_DEFAULT(ShenandoahUncommit, false);
+  }
+
   // If class unloading is disabled, no unloading for concurrent cycles as well.
   // If class unloading is enabled, users should opt-in for unloading during
   // concurrent cycles.
@@ -1868,6 +1881,16 @@ void Arguments::set_shenandoah_gc_flags() {
     FLAG_SET_DEFAULT(NodeLimitFudgeFactor, NodeLimitFudgeFactor * 3);
   }
 #endif
+#endif
+
+  // Make sure safepoint deadlocks are failing predictably. This sets up VM to report
+  // fatal error after 10 seconds of wait for safepoint syncronization (not the VM
+  // operation itself). There is no good reason why Shenandoah would spend that
+  // much time synchronizing.
+#ifdef ASSERT
+  FLAG_SET_DEFAULT(SafepointTimeout, true);
+  FLAG_SET_DEFAULT(SafepointTimeoutDelay, 10000);
+  FLAG_SET_DEFAULT(AbortVMOnSafepointTimeout, true);
 #endif
 }
 

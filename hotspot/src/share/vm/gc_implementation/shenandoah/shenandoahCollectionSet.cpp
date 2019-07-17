@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Red Hat, Inc. and/or its affiliates.
+ * Copyright (c) 2016, 2018, Red Hat, Inc. All rights reserved.
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
@@ -22,31 +22,60 @@
  */
 
 #include "precompiled.hpp"
+
 #include "gc_implementation/shenandoah/shenandoahCollectionSet.hpp"
-#include "gc_implementation/shenandoah/shenandoahCollectionSet.inline.hpp"
-#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeap.inline.hpp"
-#include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "gc_implementation/shenandoah/shenandoahHeapRegionSet.hpp"
+#include "gc_implementation/shenandoah/shenandoahUtils.hpp"
 #include "runtime/atomic.hpp"
+#include "services/memTracker.hpp"
 #include "utilities/copy.hpp"
 
-ShenandoahCollectionSet::ShenandoahCollectionSet(ShenandoahHeap* heap, HeapWord* heap_base) :
+ShenandoahCollectionSet::ShenandoahCollectionSet(ShenandoahHeap* heap, char* heap_base, size_t size) :
   _map_size(heap->num_regions()),
   _region_size_bytes_shift(ShenandoahHeapRegion::region_size_bytes_shift()),
-  _cset_map(NEW_C_HEAP_ARRAY(jbyte, _map_size, mtGC)),
-  _biased_cset_map(_cset_map - ((uintx)heap_base >> _region_size_bytes_shift)),
+  _map_space(align_size_up(((uintx)heap_base + size) >> _region_size_bytes_shift, os::vm_allocation_granularity())),
+  _cset_map(_map_space.base() + ((uintx)heap_base >> _region_size_bytes_shift)),
+  _biased_cset_map(_map_space.base()),
   _heap(heap),
   _garbage(0),
   _live_data(0),
   _used(0),
   _region_count(0),
   _current_index(0) {
-  // Use 1-byte data type
-  STATIC_ASSERT(sizeof(jbyte) == 1);
 
-  // Initialize cset map
+  // The collection set map is reserved to cover the entire heap *and* zero addresses.
+  // This is needed to accept in-cset checks for both heap oops and NULLs, freeing
+  // high-performance code from checking for NULL first.
+  //
+  // Since heap_base can be far away, committing the entire map would waste memory.
+  // Therefore, we only commit the parts that are needed to operate: the heap view,
+  // and the zero page.
+  //
+  // Note: we could instead commit the entire map, and piggyback on OS virtual memory
+  // subsystem for mapping not-yet-written-to pages to a single physical backing page,
+  // but this is not guaranteed, and would confuse NMT and other memory accounting tools.
+
+  MemTracker::record_virtual_memory_type(_map_space.base(), mtGC);
+
+  size_t page_size = (size_t)os::vm_page_size();
+
+  if (!_map_space.special()) {
+    // Commit entire pages that cover the heap cset map.
+    char* bot_addr = (char*)align_ptr_down(_cset_map, page_size);
+    char* top_addr = (char*)align_ptr_up(_cset_map + _map_size, page_size);
+    os::commit_memory_or_exit(bot_addr, pointer_delta(top_addr, bot_addr, 1), false,
+                              "Unable to commit collection set bitmap: heap");
+
+    // Commit the zero page, if not yet covered by heap cset map.
+    if (bot_addr != _biased_cset_map) {
+      os::commit_memory_or_exit(_biased_cset_map, page_size, false,
+                                "Unable to commit collection set bitmap: zero page");
+    }
+  }
+
   Copy::zero_to_bytes(_cset_map, _map_size);
+  Copy::zero_to_bytes(_biased_cset_map, page_size);
 }
 
 void ShenandoahCollectionSet::add_region(ShenandoahHeapRegion* r) {
@@ -124,7 +153,6 @@ ShenandoahHeapRegion* ShenandoahCollectionSet::claim_next() {
   return NULL;
 }
 
-
 ShenandoahHeapRegion* ShenandoahCollectionSet::next() {
   assert(ShenandoahSafepoint::is_at_shenandoah_safepoint(), "Must be at a safepoint");
   assert(Thread::current()->is_VM_thread(), "Must be VMThread");
@@ -138,7 +166,6 @@ ShenandoahHeapRegion* ShenandoahCollectionSet::next() {
 
   return NULL;
 }
-
 
 void ShenandoahCollectionSet::print_on(outputStream* out) const {
   out->print_cr("Collection Set : " SIZE_FORMAT "", count());

@@ -970,6 +970,7 @@ void LIR_Assembler::stack2stack(LIR_Opr src, LIR_Opr dest, BasicType type) {
   reg2stack(temp, dest, dest->type(), false);
 }
 
+
 void LIR_Assembler::mem2reg(LIR_Opr src, LIR_Opr dest, BasicType type, LIR_PatchCode patch_code, CodeEmitInfo* info, bool wide, bool /* unaligned */) {
   LIR_Address* addr = src->as_address_ptr();
   LIR_Address* from_addr = src->as_address_ptr();
@@ -1068,6 +1069,7 @@ void LIR_Assembler::mem2reg(LIR_Opr src, LIR_Opr dest, BasicType type, LIR_Patch
   }
 }
 
+
 void LIR_Assembler::prefetchr(LIR_Opr src) { Unimplemented(); }
 
 
@@ -1154,6 +1156,8 @@ void LIR_Assembler::emit_opBranch(LIR_OpBranch* op) {
   }
 }
 
+
+
 #if INCLUDE_ALL_GCS
 void LIR_Assembler::emit_opShenandoahWriteBarrier(LIR_OpShenandoahWriteBarrier* op) {
 
@@ -1180,7 +1184,7 @@ void LIR_Assembler::emit_opShenandoahWriteBarrier(LIR_OpShenandoahWriteBarrier* 
 
 }
 #endif
- 
+
 void LIR_Assembler::emit_opConvert(LIR_OpConvert* op) {
   LIR_Opr src  = op->in_opr();
   LIR_Opr dest = op->result_opr();
@@ -1636,12 +1640,14 @@ void LIR_Assembler::casl(Register addr, Register newval, Register cmpval) {
   __ membar(__ AnyAny);
 }
 
+
 // Return 1 in rscratch1 if the CAS fails.
 void LIR_Assembler::emit_compare_and_swap(LIR_OpCompareAndSwap* op) {
   assert(VM_Version::supports_cx8(), "wrong machine");
   Register addr = as_reg(op->addr());
   Register newval = as_reg(op->new_value());
   Register cmpval = as_reg(op->cmp_value());
+  Label succeed, fail, around;
   Register res = op->result_opr()->as_register();
 
   if (op->code() == lir_cas_obj) {
@@ -1656,8 +1662,7 @@ void LIR_Assembler::emit_compare_and_swap(LIR_OpCompareAndSwap* op) {
         Register t2 = op->tmp2()->as_register();
         __ encode_heap_oop(t2, newval);
         newval = t2;
-        __ cmpxchg_oop_shenandoah(addr, cmpval, newval, Assembler::word, /*acquire*/ false, /*release*/ true, /*weak*/ false);
-        __ csetw(res, Assembler::EQ);
+        __ cmpxchg_oop_shenandoah(addr, cmpval, newval, /*acquire*/ false, /*release*/ true, /*weak*/ false, /*is_cae*/ false, res);
       } else
 #endif
       {
@@ -1671,8 +1676,7 @@ void LIR_Assembler::emit_compare_and_swap(LIR_OpCompareAndSwap* op) {
     } else {
 #if INCLUDE_ALL_GCS
       if (UseShenandoahGC && ShenandoahCASBarrier) {
-        __ cmpxchg_oop_shenandoah(addr, cmpval, newval, Assembler::xword, /*acquire*/ false, /*release*/ true, /*weak*/ false);
-        __ csetw(res, Assembler::EQ);
+        __ cmpxchg_oop_shenandoah(addr, cmpval, newval, /*acquire*/ false, /*release*/ true, /*weak*/ false, /*is_cae*/ false, res);
       } else
 #endif
       {
@@ -1983,8 +1987,6 @@ void LIR_Assembler::comp_op(LIR_Condition condition, LIR_Opr opr1, LIR_Opr opr2,
       return;
     }
     if (opr2->is_double_cpu()) {
-      guarantee(opr2->type() != T_OBJECT && opr2->type() != T_ARRAY, "need acmp barrier?");
-      guarantee(opr1->type() != T_OBJECT && opr1->type() != T_ARRAY, "need acmp barrier?");
       // cpu register - cpu register
       Register reg2 = opr2->as_register_lo();
       __ cmp(reg1, reg2);
@@ -2013,12 +2015,6 @@ void LIR_Assembler::comp_op(LIR_Condition condition, LIR_Opr opr1, LIR_Opr opr2,
       default:
         ShouldNotReachHere();
         break;
-      }
-
-      if (opr2->type() == T_OBJECT || opr2->type() == T_ARRAY) {
-        jobject2reg(opr2->as_constant_ptr()->as_jobject(), rscratch1);
-        __ cmpoops(reg1, rscratch1);
-        return;
       }
 
       if (Assembler::operand_valid_for_add_sub_immediate(imm)) {
@@ -2323,7 +2319,7 @@ void LIR_Assembler::emit_arraycopy(LIR_OpArrayCopy* op) {
 
     if (copyfunc_addr != NULL) {
       // r0 is -1^K where K == partial copied count
-      __ eonw(rscratch1, r0, 0);
+      __ eonw(rscratch1, r0, zr);
       // adjust length down and src/end pos up by partial copied count
       __ subw(length, length, rscratch1);
       __ addw(src_pos, src_pos, rscratch1);
