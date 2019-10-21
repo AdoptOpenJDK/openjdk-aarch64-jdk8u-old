@@ -85,10 +85,6 @@
 # include "adfiles/ad_ppc_64.hpp"
 #endif
 
-#ifdef BUILTIN_SIM
-#include "../../../../../../simulator/simulator.hpp"
-#endif
-
 // -------------------- Compile::mach_constant_base_node -----------------------
 // Constant table base node singleton.
 MachConstantBaseNode* Compile::mach_constant_base_node() {
@@ -940,37 +936,6 @@ Compile::Compile( ciEnv* ci_env, C2Compiler* compiler, ciMethod* target, int osr
       _code_offsets.set_value(CodeOffsets::Verified_Entry, _first_block_size);
       _code_offsets.set_value(CodeOffsets::OSR_Entry, 0);
     }
-
-#ifdef BUILTIN_SIM
-    char *method_name = NULL;
-    AArch64Simulator *sim = NULL;
-    size_t len = 65536;
-    if (NotifySimulator) {
-      method_name = new char[len];
-    }
-    if (method_name) {
-      unsigned char *entry = code_buffer()->insts_begin();
-      stringStream st(method_name, 400);
-      if (_entry_bci != InvocationEntryBci) {
-        st.print("osr:");
-      }
-      _method->holder()->name()->print_symbol_on(&st);
-      // convert '/' separators in class name into '.' separator
-      for (unsigned i = 0; i < len; i++) {
-        if (method_name[i] == '/') {
-          method_name[i] = '.';
-        } else if (method_name[i] == '\0') {
-          break;
-        }
-      }
-      st.print(".");
-      _method->name()->print_symbol_on(&st);
-      _method->signature()->as_symbol()->print_symbol_on(&st);
-      sim = AArch64Simulator::get_current(UseSimulatorCache, DisableBCCheck);
-      sim->notifyCompile(method_name, entry);
-      sim->notifyRelocate(entry, 0);
-    }
-#endif
 
     env()->register_method(_method, _entry_bci,
                            &_code_offsets,
@@ -2719,6 +2684,17 @@ void Compile::final_graph_reshaping_impl( Node *n, Final_Reshape_Counts &frc) {
             n->is_Load() && (n->as_Load()->bottom_type()->isa_oopptr() ||
                              LoadNode::is_immutable_value(n->in(MemNode::Address))),
             "raw memory operations should have control edge");
+  }
+  if (n->is_MemBar()) {
+    MemBarNode* mb = n->as_MemBar();
+    if (mb->trailing_store() || mb->trailing_load_store()) {
+      assert(mb->leading_membar()->trailing_membar() == mb, "bad membar pair");
+      Node* mem = mb->in(MemBarNode::Precedent);
+      assert((mb->trailing_store() && mem->is_Store() && mem->as_Store()->is_release()) ||
+             (mb->trailing_load_store() && mem->is_LoadStore()), "missing mem op");
+    } else if (mb->leading()) {
+      assert(mb->trailing_membar()->leading_membar() == mb, "bad membar pair");
+    }
   }
 #endif
   // Count FPU ops and common calls, implements item (3)
