@@ -100,7 +100,7 @@ class MemoryPool : public CHeapObj<mtInternal> {
   // max size could be changed
   virtual size_t max_size()    const       { return _max_size; }
 
-  bool is_pool(instanceHandle pool) { return (oopDesc::equals(pool(), _memory_pool_obj)); }
+  bool is_pool(instanceHandle pool) { return pool() == _memory_pool_obj; }
 
   bool available_for_allocation()   { return _available_for_allocation; }
   bool set_available_for_allocation(bool value) {
@@ -198,7 +198,7 @@ public:
                                bool support_usage_threshold);
 
   MemoryUsage get_memory_usage();
-  size_t used_in_bytes()            { return _space->used(); }
+  size_t used_in_bytes()            { return _space->used_stable(); }
 };
 #endif // INCLUDE_ALL_GCS
 

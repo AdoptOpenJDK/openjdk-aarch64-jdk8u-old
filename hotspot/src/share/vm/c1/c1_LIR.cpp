@@ -1012,15 +1012,6 @@ void LIR_OpVisitState::visit(LIR_Op* op) {
       do_temp(opProfileType->_tmp);
       break;
     }
-#if INCLUDE_ALL_GCS
-    case lir_shenandoah_wb: {
-      assert(op->as_OpShenandoahWriteBarrier() != NULL, "must be");
-      LIR_OpShenandoahWriteBarrier* opShenandoahWB = (LIR_OpShenandoahWriteBarrier*) op;
-      do_input(opShenandoahWB->_opr);
-      do_output(opShenandoahWB->_result);
-      break;
-    }
-#endif
   default:
     ShouldNotReachHere();
   }
@@ -1118,12 +1109,6 @@ void LIR_OpBranch::emit_code(LIR_Assembler* masm) {
     masm->append_code_stub(stub());
   }
 }
-
-#if INCLUDE_ALL_GCS
-void LIR_OpShenandoahWriteBarrier::emit_code(LIR_Assembler* masm) {
-  masm->emit_opShenandoahWriteBarrier(this);
-}
-#endif
 
 void LIR_OpConvert::emit_code(LIR_Assembler* masm) {
   masm->emit_opConvert(this);
@@ -1851,9 +1836,6 @@ const char * LIR_Op::name() const {
      case lir_profile_call:          s = "profile_call";  break;
      // LIR_OpProfileType
      case lir_profile_type:          s = "profile_type";  break;
-#if INCLUDE_ALL_GCS
-     case lir_shenandoah_wb:         s = "shenandoah_wb"; break;
-#endif
      // LIR_OpAssert
 #ifdef ASSERT
      case lir_assert:                s = "assert";        break;
@@ -1863,13 +1845,6 @@ const char * LIR_Op::name() const {
   }
   return s;
 }
-
-#if INCLUDE_ALL_GCS
-void LIR_OpShenandoahWriteBarrier::print_instr(outputStream* out) const {
-  out->print("[obj: "); in_opr()->print(out); out->print("]");
-  out->print("[res: "); result_opr()->print(out); out->print("]");
-}
-#endif
 
 // LIR_OpJavaCall
 void LIR_OpJavaCall::print_instr(outputStream* out) const {
@@ -2147,11 +2122,13 @@ void LIR_OpProfileCall::print_instr(outputStream* out) const {
 // LIR_OpProfileType
 void LIR_OpProfileType::print_instr(outputStream* out) const {
   out->print("exact = ");
-  if (exact_klass())
+  if  (exact_klass() == NULL) {
+    out->print("unknown");
+  } else {
     exact_klass()->print_name_on(out);
-  else
-    out->print("(null)");
+  }
   out->print(" current = "); ciTypeEntries::print_ciklass(out, current_klass());
+  out->print(" ");
   mdp()->print(out);          out->print(" ");
   obj()->print(out);          out->print(" ");
   tmp()->print(out);          out->print(" ");

@@ -295,6 +295,7 @@ InstanceKlass::InstanceKlass(int vtable_len,
   set_has_unloaded_dependent(false);
   set_init_state(InstanceKlass::allocated);
   set_init_thread(NULL);
+  set_init_state(allocated);
   set_reference_type(rt);
   set_oop_map_cache(NULL);
   set_jni_ids(NULL);
@@ -979,11 +980,13 @@ void InstanceKlass::set_initialization_state_and_notify_impl(instanceKlassHandle
   oop init_lock = this_oop->init_lock();
   if (init_lock != NULL) {
     ObjectLocker ol(init_lock, THREAD);
+    this_oop->set_init_thread(NULL); // reset _init_thread before changing _init_state
     this_oop->set_init_state(state);
     this_oop->fence_and_clear_init_lock();
     ol.notify_all(CHECK);
   } else {
     assert(init_lock != NULL, "The initialization state should never be set twice");
+    this_oop->set_init_thread(NULL); // reset _init_thread before changing _init_state
     this_oop->set_init_state(state);
   }
 }
@@ -2619,7 +2622,7 @@ void InstanceKlass::set_source_debug_extension(char* array, int length) {
 }
 
 address InstanceKlass::static_field_addr(int offset) {
-  return (address)(offset + InstanceMirrorKlass::offset_of_static_fields() + cast_from_oop<intptr_t>(oopDesc::bs()->write_barrier(java_mirror())));
+  return (address)(offset + InstanceMirrorKlass::offset_of_static_fields() + cast_from_oop<intptr_t>(java_mirror()));
 }
 
 
@@ -2696,7 +2699,7 @@ bool InstanceKlass::is_same_class_package(oop classloader2, Symbol* classname2) 
 // and classname information is enough to determine a class's package
 bool InstanceKlass::is_same_class_package(oop class_loader1, Symbol* class_name1,
                                           oop class_loader2, Symbol* class_name2) {
-  if (! oopDesc::equals(class_loader1, class_loader2)) {
+  if (class_loader1 != class_loader2) {
     return false;
   } else if (class_name1 == class_name2) {
     return true;                // skip painful bytewise comparison
@@ -3603,6 +3606,7 @@ void InstanceKlass::set_init_state(ClassState state) {
   bool good_state = is_shared() ? (_init_state <= state)
                                                : (_init_state < state);
   assert(good_state || state == allocated, "illegal state transition");
+  assert(_init_thread == NULL, "should be cleared before state change");
   _init_state = (u1)state;
 }
 #endif

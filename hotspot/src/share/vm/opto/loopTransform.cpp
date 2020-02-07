@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -861,11 +861,7 @@ Node *PhaseIdealLoop::clone_up_backedge_goo( Node *back_ctrl, Node *preheader_ct
   // Recursive fixup any other input edges into x.
   // If there are no changes we can just return 'n', otherwise
   // we need to clone a private copy and change it.
-  uint start = 1;
-  if (n->Opcode() == Op_ShenandoahWBMemProj) {
-    start = 0;
-  }
-  for( uint i = start; i < n->req(); i++ ) {
+  for( uint i = 1; i < n->req(); i++ ) {
     Node *g = clone_up_backedge_goo( back_ctrl, preheader_ctrl, n->in(i), visited, clones );
     if( g != n->in(i) ) {
       if( !x ) {
@@ -2235,6 +2231,13 @@ bool IdealLoopTree::policy_do_remove_empty_loop( PhaseIdealLoop *phase ) {
     // We also need to replace the original limit to collapse loop exit.
     Node* cmp = cl->loopexit()->cmp_node();
     assert(cl->limit() == cmp->in(2), "sanity");
+    // Duplicate cmp node if it has other users
+    if (cmp->outcnt() > 1) {
+      cmp = cmp->clone();
+      cmp = phase->_igvn.register_new_node_with_optimizer(cmp);
+      BoolNode *bol = cl->loopexit()->in(CountedLoopEndNode::TestValue)->as_Bool();
+      phase->_igvn.replace_input_of(bol, 1, cmp); // put bol on worklist
+    }
     phase->_igvn._worklist.push(cmp->in(2)); // put limit on worklist
     phase->_igvn.replace_input_of(cmp, 2, exact_limit); // put cmp on worklist
   }

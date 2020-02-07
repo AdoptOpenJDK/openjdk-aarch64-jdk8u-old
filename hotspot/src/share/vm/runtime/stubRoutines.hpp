@@ -202,6 +202,7 @@ class StubRoutines: AllStatic {
   static address _aescrypt_decryptBlock;
   static address _cipherBlockChaining_encryptAESCrypt;
   static address _cipherBlockChaining_decryptAESCrypt;
+  static address _ghash_processBlocks;
 
   static address _sha1_implCompress;
   static address _sha1_implCompressMB;
@@ -240,8 +241,6 @@ class StubRoutines: AllStatic {
   static address _safefetchN_entry;
   static address _safefetchN_fault_pc;
   static address _safefetchN_continuation_pc;
-
-  static address _shenandoah_wb_C;
 
  public:
   // Initialization/Testing
@@ -366,6 +365,7 @@ class StubRoutines: AllStatic {
   static address aescrypt_decryptBlock()                { return _aescrypt_decryptBlock; }
   static address cipherBlockChaining_encryptAESCrypt()  { return _cipherBlockChaining_encryptAESCrypt; }
   static address cipherBlockChaining_decryptAESCrypt()  { return _cipherBlockChaining_decryptAESCrypt; }
+  static address ghash_processBlocks() { return _ghash_processBlocks; }
 
   static address sha1_implCompress()     { return _sha1_implCompress; }
   static address sha1_implCompressMB()   { return _sha1_implCompressMB; }
@@ -461,11 +461,6 @@ class StubRoutines: AllStatic {
   static void arrayof_jlong_copy     (HeapWord* src, HeapWord* dest, size_t count);
   static void arrayof_oop_copy       (HeapWord* src, HeapWord* dest, size_t count);
   static void arrayof_oop_copy_uninit(HeapWord* src, HeapWord* dest, size_t count);
-
-  static address shenandoah_wb_C()
-  {
-    return _shenandoah_wb_C;
-  }
 };
 
 // Safefetch allows to load a value from a location that's not known

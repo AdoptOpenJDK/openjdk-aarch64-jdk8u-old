@@ -289,22 +289,25 @@ InstanceKlass* klassVtable::find_transitive_override(InstanceKlass* initialsuper
                             int vtable_index, Handle target_loader, Symbol* target_classname, Thread * THREAD) {
   InstanceKlass* superk = initialsuper;
   while (superk != NULL && superk->super() != NULL) {
-    InstanceKlass* supersuperklass = InstanceKlass::cast(superk->super());
-    klassVtable* ssVtable = supersuperklass->vtable();
+    klassVtable* ssVtable = (superk->super())->vtable();
     if (vtable_index < ssVtable->length()) {
       Method* super_method = ssVtable->method_at(vtable_index);
+      // get the class holding the matching method
+      // make sure you use that class for is_override
+      InstanceKlass* supermethodholder = super_method->method_holder();
 #ifndef PRODUCT
       Symbol* name= target_method()->name();
       Symbol* signature = target_method()->signature();
       assert(super_method->name() == name && super_method->signature() == signature, "vtable entry name/sig mismatch");
 #endif
-      if (supersuperklass->is_override(super_method, target_loader, target_classname, THREAD)) {
+
+      if (supermethodholder->is_override(super_method, target_loader, target_classname, THREAD)) {
 #ifndef PRODUCT
         if (PrintVtables && Verbose) {
           ResourceMark rm(THREAD);
           char* sig = target_method()->name_and_sig_as_C_string();
           tty->print("transitive overriding superclass %s with %s::%s index %d, original flags: ",
-           supersuperklass->internal_name(),
+           supermethodholder->internal_name(),
            _klass->internal_name(), sig, vtable_index);
            super_method->access_flags().print_on(tty);
            if (super_method->is_default_method()) {
@@ -458,7 +461,7 @@ bool klassVtable::update_inherited_vtable(InstanceKlass* klass, methodHandle tar
         // to link to the first super, and we get all the others.
           Handle super_loader(THREAD, super_klass->class_loader());
 
-          if (! oopDesc::equals(target_loader(), super_loader())) {
+          if (target_loader() != super_loader()) {
             ResourceMark rm(THREAD);
             Symbol* failed_type_symbol =
               SystemDictionary::check_signature_loaders(signature, target_loader,
@@ -656,7 +659,7 @@ bool klassVtable::needs_new_vtable_entry(methodHandle target_method,
 
   // search through the super class hierarchy to see if we need
   // a new entry
-  ResourceMark rm;
+  ResourceMark rm(THREAD);
   Symbol* name = target_method()->name();
   Symbol* signature = target_method()->signature();
   Klass* k = super;
@@ -1247,7 +1250,7 @@ void klassItable::initialize_itable_for_interface(int method_table_offset, Klass
       // if checkconstraints requested
       if (checkconstraints) {
         Handle method_holder_loader (THREAD, target->method_holder()->class_loader());
-        if (! oopDesc::equals(method_holder_loader(), interface_loader())) {
+        if (method_holder_loader() != interface_loader()) {
           ResourceMark rm(THREAD);
           Symbol* failed_type_symbol =
             SystemDictionary::check_signature_loaders(m->signature(),

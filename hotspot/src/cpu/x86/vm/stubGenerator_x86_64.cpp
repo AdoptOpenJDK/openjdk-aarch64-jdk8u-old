@@ -25,10 +25,6 @@
 #include "precompiled.hpp"
 #include "asm/macroAssembler.hpp"
 #include "asm/macroAssembler.inline.hpp"
-#include "gc_implementation/shenandoah/shenandoahBarrierSet.hpp"
-#include "gc_implementation/shenandoah/shenandoahBrooksPointer.hpp"
-#include "gc_implementation/shenandoah/shenandoahHeap.hpp"
-#include "gc_implementation/shenandoah/shenandoahHeapRegion.hpp"
 #include "interpreter/interpreter.hpp"
 #include "nativeInst_x86.hpp"
 #include "oops/instanceOop.hpp"
@@ -45,6 +41,9 @@
 #include "utilities/top.hpp"
 #ifdef COMPILER2
 #include "opto/runtime.hpp"
+#endif
+#if INCLUDE_ALL_GCS
+#include "shenandoahBarrierSetAssembler_x86.hpp"
 #endif
 
 // Declaration and definition of StubGenerator (no .hpp file).
@@ -751,95 +750,6 @@ class StubGenerator: public StubCodeGenerator {
       __ pop(rax);
     }
 
-    __ ret(0);
-
-    return start;
-  }
-
-  address generate_shenandoah_wb(bool c_abi, bool do_cset_test) {
-    StubCodeMark mark(this, "StubRoutines", "shenandoah_wb");
-    address start = __ pc();
-
-    Label not_done;
-
-    // We use RDI, which also serves as argument register for slow call.
-    // RAX always holds the src object ptr, except after the slow call and
-    // the cmpxchg, then it holds the result.
-    // R8 and RCX are used as temporary registers.
-    if (!c_abi) {
-      __ push(rdi);
-      __ push(r8);
-    }
-
-    // Check for object beeing in the collection set.
-    // TODO: Can we use only 1 register here?
-    // The source object arrives here in rax.
-    // live: rax
-    // live: rdi
-    if (!c_abi) {
-      __ mov(rdi, rax);
-    } else {
-      if (rax != c_rarg0) {
-        __ mov(rax, c_rarg0);
-      }
-    }
-    if (do_cset_test) {
-      __ shrptr(rdi, ShenandoahHeapRegion::region_size_bytes_shift_jint());
-      // live: r8
-      __ movptr(r8, (intptr_t) ShenandoahHeap::in_cset_fast_test_addr());
-      __ movbool(r8, Address(r8, rdi, Address::times_1));
-      // unlive: rdi
-      __ testbool(r8);
-      // unlive: r8
-      __ jccb(Assembler::notZero, not_done);
-
-      if (!c_abi) {
-        __ pop(r8);
-        __ pop(rdi);
-      }
-      __ ret(0);
-
-      __ bind(not_done);
-    }
-
-    if (!c_abi) {
-      __ push(rcx);
-    }
-
-    if (!c_abi) {
-      __ push(rdx);
-      __ push(rdi);
-      __ push(rsi);
-      __ push(r8);
-      __ push(r9);
-      __ push(r10);
-      __ push(r11);
-      __ push(r12);
-      __ push(r13);
-      __ push(r14);
-      __ push(r15);
-    }
-    __ save_vector_registers();
-    __ movptr(rdi, rax);
-    __ call_VM_leaf(CAST_FROM_FN_PTR(address, ShenandoahBarrierSet::write_barrier_JRT), rdi);
-    __ restore_vector_registers();
-    if (!c_abi) {
-      __ pop(r15);
-      __ pop(r14);
-      __ pop(r13);
-      __ pop(r12);
-      __ pop(r11);
-      __ pop(r10);
-      __ pop(r9);
-      __ pop(r8);
-      __ pop(rsi);
-      __ pop(rdi);
-      __ pop(rdx);
-
-      __ pop(rcx);
-      __ pop(r8);
-      __ pop(rdi);
-    }
     __ ret(0);
 
     return start;
@@ -3734,6 +3644,175 @@ class StubGenerator: public StubCodeGenerator {
     return start;
   }
 
+
+  // byte swap x86 long
+  address generate_ghash_long_swap_mask() {
+    __ align(CodeEntryAlignment);
+    StubCodeMark mark(this, "StubRoutines", "ghash_long_swap_mask");
+    address start = __ pc();
+    __ emit_data64(0x0f0e0d0c0b0a0908, relocInfo::none );
+    __ emit_data64(0x0706050403020100, relocInfo::none );
+  return start;
+  }
+
+  // byte swap x86 byte array
+  address generate_ghash_byte_swap_mask() {
+    __ align(CodeEntryAlignment);
+    StubCodeMark mark(this, "StubRoutines", "ghash_byte_swap_mask");
+    address start = __ pc();
+    __ emit_data64(0x08090a0b0c0d0e0f, relocInfo::none );
+    __ emit_data64(0x0001020304050607, relocInfo::none );
+  return start;
+  }
+
+  /* Single and multi-block ghash operations */
+  address generate_ghash_processBlocks() {
+    __ align(CodeEntryAlignment);
+    Label L_ghash_loop, L_exit;
+    StubCodeMark mark(this, "StubRoutines", "ghash_processBlocks");
+    address start = __ pc();
+
+    const Register state        = c_rarg0;
+    const Register subkeyH      = c_rarg1;
+    const Register data         = c_rarg2;
+    const Register blocks       = c_rarg3;
+
+#ifdef _WIN64
+    const int XMM_REG_LAST  = 10;
+#endif
+
+    const XMMRegister xmm_temp0 = xmm0;
+    const XMMRegister xmm_temp1 = xmm1;
+    const XMMRegister xmm_temp2 = xmm2;
+    const XMMRegister xmm_temp3 = xmm3;
+    const XMMRegister xmm_temp4 = xmm4;
+    const XMMRegister xmm_temp5 = xmm5;
+    const XMMRegister xmm_temp6 = xmm6;
+    const XMMRegister xmm_temp7 = xmm7;
+    const XMMRegister xmm_temp8 = xmm8;
+    const XMMRegister xmm_temp9 = xmm9;
+    const XMMRegister xmm_temp10 = xmm10;
+
+    __ enter();
+
+#ifdef _WIN64
+    // save the xmm registers which must be preserved 6-10
+    __ subptr(rsp, -rsp_after_call_off * wordSize);
+    for (int i = 6; i <= XMM_REG_LAST; i++) {
+      __ movdqu(xmm_save(i), as_XMMRegister(i));
+    }
+#endif
+
+    __ movdqu(xmm_temp10, ExternalAddress(StubRoutines::x86::ghash_long_swap_mask_addr()));
+
+    __ movdqu(xmm_temp0, Address(state, 0));
+    __ pshufb(xmm_temp0, xmm_temp10);
+
+
+    __ BIND(L_ghash_loop);
+    __ movdqu(xmm_temp2, Address(data, 0));
+    __ pshufb(xmm_temp2, ExternalAddress(StubRoutines::x86::ghash_byte_swap_mask_addr()));
+
+    __ movdqu(xmm_temp1, Address(subkeyH, 0));
+    __ pshufb(xmm_temp1, xmm_temp10);
+
+    __ pxor(xmm_temp0, xmm_temp2);
+
+    //
+    // Multiply with the hash key
+    //
+    __ movdqu(xmm_temp3, xmm_temp0);
+    __ pclmulqdq(xmm_temp3, xmm_temp1, 0);      // xmm3 holds a0*b0
+    __ movdqu(xmm_temp4, xmm_temp0);
+    __ pclmulqdq(xmm_temp4, xmm_temp1, 16);     // xmm4 holds a0*b1
+
+    __ movdqu(xmm_temp5, xmm_temp0);
+    __ pclmulqdq(xmm_temp5, xmm_temp1, 1);      // xmm5 holds a1*b0
+    __ movdqu(xmm_temp6, xmm_temp0);
+    __ pclmulqdq(xmm_temp6, xmm_temp1, 17);     // xmm6 holds a1*b1
+
+    __ pxor(xmm_temp4, xmm_temp5);      // xmm4 holds a0*b1 + a1*b0
+
+    __ movdqu(xmm_temp5, xmm_temp4);    // move the contents of xmm4 to xmm5
+    __ psrldq(xmm_temp4, 8);    // shift by xmm4 64 bits to the right
+    __ pslldq(xmm_temp5, 8);    // shift by xmm5 64 bits to the left
+    __ pxor(xmm_temp3, xmm_temp5);
+    __ pxor(xmm_temp6, xmm_temp4);      // Register pair <xmm6:xmm3> holds the result
+                                        // of the carry-less multiplication of
+                                        // xmm0 by xmm1.
+
+    // We shift the result of the multiplication by one bit position
+    // to the left to cope for the fact that the bits are reversed.
+    __ movdqu(xmm_temp7, xmm_temp3);
+    __ movdqu(xmm_temp8, xmm_temp6);
+    __ pslld(xmm_temp3, 1);
+    __ pslld(xmm_temp6, 1);
+    __ psrld(xmm_temp7, 31);
+    __ psrld(xmm_temp8, 31);
+    __ movdqu(xmm_temp9, xmm_temp7);
+    __ pslldq(xmm_temp8, 4);
+    __ pslldq(xmm_temp7, 4);
+    __ psrldq(xmm_temp9, 12);
+    __ por(xmm_temp3, xmm_temp7);
+    __ por(xmm_temp6, xmm_temp8);
+    __ por(xmm_temp6, xmm_temp9);
+
+    //
+    // First phase of the reduction
+    //
+    // Move xmm3 into xmm7, xmm8, xmm9 in order to perform the shifts
+    // independently.
+    __ movdqu(xmm_temp7, xmm_temp3);
+    __ movdqu(xmm_temp8, xmm_temp3);
+    __ movdqu(xmm_temp9, xmm_temp3);
+    __ pslld(xmm_temp7, 31);    // packed right shift shifting << 31
+    __ pslld(xmm_temp8, 30);    // packed right shift shifting << 30
+    __ pslld(xmm_temp9, 25);    // packed right shift shifting << 25
+    __ pxor(xmm_temp7, xmm_temp8);      // xor the shifted versions
+    __ pxor(xmm_temp7, xmm_temp9);
+    __ movdqu(xmm_temp8, xmm_temp7);
+    __ pslldq(xmm_temp7, 12);
+    __ psrldq(xmm_temp8, 4);
+    __ pxor(xmm_temp3, xmm_temp7);      // first phase of the reduction complete
+
+    //
+    // Second phase of the reduction
+    //
+    // Make 3 copies of xmm3 in xmm2, xmm4, xmm5 for doing these
+    // shift operations.
+    __ movdqu(xmm_temp2, xmm_temp3);
+    __ movdqu(xmm_temp4, xmm_temp3);
+    __ movdqu(xmm_temp5, xmm_temp3);
+    __ psrld(xmm_temp2, 1);     // packed left shifting >> 1
+    __ psrld(xmm_temp4, 2);     // packed left shifting >> 2
+    __ psrld(xmm_temp5, 7);     // packed left shifting >> 7
+    __ pxor(xmm_temp2, xmm_temp4);      // xor the shifted versions
+    __ pxor(xmm_temp2, xmm_temp5);
+    __ pxor(xmm_temp2, xmm_temp8);
+    __ pxor(xmm_temp3, xmm_temp2);
+    __ pxor(xmm_temp6, xmm_temp3);      // the result is in xmm6
+
+    __ decrement(blocks);
+    __ jcc(Assembler::zero, L_exit);
+    __ movdqu(xmm_temp0, xmm_temp6);
+    __ addptr(data, 16);
+    __ jmp(L_ghash_loop);
+
+    __ BIND(L_exit);
+    __ pshufb(xmm_temp6, xmm_temp10);          // Byte swap 16-byte result
+    __ movdqu(Address(state, 0), xmm_temp6);   // store the result
+
+#ifdef _WIN64
+    // restore xmm regs belonging to calling function
+    for (int i = 6; i <= XMM_REG_LAST; i++) {
+      __ movdqu(as_XMMRegister(i), xmm_save(i));
+    }
+#endif
+    __ leave();
+    __ ret(0);
+    return start;
+  }
+
   /**
    *  Arguments:
    *
@@ -4144,10 +4223,6 @@ class StubGenerator: public StubCodeGenerator {
                                                 throw_NullPointerException_at_call));
 
     // entry points that are platform specific
-    if (UseShenandoahGC && ShenandoahWriteBarrier) {
-         StubRoutines::x86::_shenandoah_wb = generate_shenandoah_wb(false, true);
-         StubRoutines::_shenandoah_wb_C = generate_shenandoah_wb(true, false);
-    }
     StubRoutines::x86::_f2i_fixup = generate_f2i_fixup();
     StubRoutines::x86::_f2l_fixup = generate_f2l_fixup();
     StubRoutines::x86::_d2i_fixup = generate_d2i_fixup();
@@ -4174,6 +4249,13 @@ class StubGenerator: public StubCodeGenerator {
       StubRoutines::_aescrypt_decryptBlock = generate_aescrypt_decryptBlock();
       StubRoutines::_cipherBlockChaining_encryptAESCrypt = generate_cipherBlockChaining_encryptAESCrypt();
       StubRoutines::_cipherBlockChaining_decryptAESCrypt = generate_cipherBlockChaining_decryptAESCrypt_Parallel();
+    }
+
+    // Generate GHASH intrinsics code
+    if (UseGHASHIntrinsics) {
+      StubRoutines::x86::_ghash_long_swap_mask_addr = generate_ghash_long_swap_mask();
+      StubRoutines::x86::_ghash_byte_swap_mask_addr = generate_ghash_byte_swap_mask();
+      StubRoutines::_ghash_processBlocks = generate_ghash_processBlocks();
     }
 
     // Safefetch stubs.
