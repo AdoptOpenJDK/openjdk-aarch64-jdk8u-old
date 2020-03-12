@@ -136,31 +136,6 @@ bool ShenandoahBarrierC2Support::has_safepoint_between(Node* start, Node* stop, 
   return false;
 }
 
-bool ShenandoahBarrierC2Support::try_common_gc_state_load(Node *n, PhaseIdealLoop *phase) {
-  assert(is_gc_state_load(n), "inconsistent");
-  Node* addp = n->in(MemNode::Address);
-  Node* dominator = NULL;
-  for (DUIterator_Fast imax, i = addp->fast_outs(imax); i < imax; i++) {
-    Node* u = addp->fast_out(i);
-    assert(is_gc_state_load(u), "inconsistent");
-    if (u != n && phase->is_dominator(u->in(0), n->in(0))) {
-      if (dominator == NULL) {
-        dominator = u;
-      } else {
-        if (phase->dom_depth(u->in(0)) < phase->dom_depth(dominator->in(0))) {
-          dominator = u;
-        }
-      }
-    }
-  }
-  if (dominator == NULL || has_safepoint_between(n->in(0), dominator->in(0), phase)) {
-    return false;
-  }
-  phase->igvn().replace_node(n, dominator);
-
-  return true;
-}
-
 #ifdef ASSERT
 bool ShenandoahBarrierC2Support::verify_helper(Node* in, Node_Stack& phis, VectorSet& visited, verify_type t, bool trace, Unique_Node_List& barriers_used) {
   assert(phis.size() == 0, "");
@@ -652,6 +627,17 @@ bool ShenandoahBarrierC2Support::is_dominator_same_ctrl(Node* c, Node* d, Node* 
     if (m->is_Phi() && m->in(0)->is_Loop()) {
       assert(phase->ctrl_or_self(m->in(LoopNode::EntryControl)) != c, "following loop entry should lead to new control");
     } else {
+      if (m->is_Store() || m->is_LoadStore()) {
+        // Take anti-dependencies into account
+        Node* mem = m->in(MemNode::Memory);
+        for (DUIterator_Fast imax, i = mem->fast_outs(imax); i < imax; i++) {
+          Node* u = mem->fast_out(i);
+          if (u->is_Load() && phase->C->can_alias(m->adr_type(), phase->C->get_alias_index(u->adr_type())) &&
+              phase->ctrl_or_self(u) == c) {
+            wq.push(u);
+          }
+        }
+      }
       for (uint i = 0; i < m->req(); i++) {
         if (m->in(i) != NULL && phase->ctrl_or_self(m->in(i)) == c) {
           wq.push(m->in(i));
@@ -991,7 +977,7 @@ void ShenandoahBarrierC2Support::in_cset_fast_test(Node*& ctrl, Node*& not_cset_
 
 void ShenandoahBarrierC2Support::call_lrb_stub(Node*& ctrl, Node*& val, Node*& result_mem, Node* raw_mem, PhaseIdealLoop* phase) {
   IdealLoopTree*loop = phase->get_loop(ctrl);
-  const TypePtr* obj_type = phase->igvn().type(val)->is_oopptr()->cast_to_nonconst();
+  const TypePtr* obj_type = phase->igvn().type(val)->is_oopptr();
 
   // The slow path stub consumes and produces raw memory in addition
   // to the existing memory edges
@@ -1000,7 +986,9 @@ void ShenandoahBarrierC2Support::call_lrb_stub(Node*& ctrl, Node*& val, Node*& r
   mm->set_memory_at(Compile::AliasIdxRaw, raw_mem);
   phase->register_new_node(mm, ctrl);
 
-  Node* call = new (phase->C) CallLeafNode(ShenandoahBarrierSetC2::shenandoah_load_reference_barrier_Type(), CAST_FROM_FN_PTR(address, ShenandoahRuntime::load_reference_barrier_JRT), "shenandoah_load_reference_barrier", TypeRawPtr::BOTTOM);
+  Node* call = new (phase->C) CallLeafNode(ShenandoahBarrierSetC2::shenandoah_load_reference_barrier_Type(),
+                                           CAST_FROM_FN_PTR(address, ShenandoahRuntime::load_reference_barrier),
+                                           "shenandoah_load_reference_barrier", TypeRawPtr::BOTTOM);
   call->init_req(TypeFunc::Control, ctrl);
   call->init_req(TypeFunc::I_O, phase->C->top());
   call->init_req(TypeFunc::Memory, mm);
@@ -1763,7 +1751,6 @@ IfNode* ShenandoahBarrierC2Support::find_unswitching_candidate(const IdealLoopTr
 
 void ShenandoahBarrierC2Support::optimize_after_expansion(VectorSet &visited, Node_Stack &stack, Node_List &old_new, PhaseIdealLoop* phase) {
   Node_List heap_stable_tests;
-  Node_List gc_state_loads;
   stack.push(phase->C->start(), 0);
   do {
     Node* n = stack.node();
@@ -1777,25 +1764,11 @@ void ShenandoahBarrierC2Support::optimize_after_expansion(VectorSet &visited, No
       }
     } else {
       stack.pop();
-      if (ShenandoahCommonGCStateLoads && is_gc_state_load(n)) {
-        gc_state_loads.push(n);
-      }
       if (n->is_If() && is_heap_stable_test(n)) {
         heap_stable_tests.push(n);
       }
     }
   } while (stack.size() > 0);
-
-  bool progress;
-  do {
-    progress = false;
-    for (uint i = 0; i < gc_state_loads.size(); i++) {
-      Node* n = gc_state_loads.at(i);
-      if (n->outcnt() != 0) {
-        progress |= try_common_gc_state_load(n, phase);
-      }
-    }
-  } while (progress);
 
   for (uint i = 0; i < heap_stable_tests.size(); i++) {
     Node* n = heap_stable_tests.at(i);
@@ -2438,6 +2411,20 @@ void MemoryGraphFixer::fix_mem(Node* ctrl, Node* new_ctrl, Node* mem, Node* mem_
   MergeMemNode* mm = NULL;
   int alias = _alias;
   DEBUG_ONLY(if (trace) { tty->print("ZZZ raw mem is"); mem->dump(); });
+  // Process loads first to not miss an anti-dependency: if the memory
+  // edge of a store is updated before a load is processed then an
+  // anti-dependency may be missed.
+  for (DUIterator i = mem->outs(); mem->has_out(i); i++) {
+    Node* u = mem->out(i);
+    if (u->_idx < last && u->is_Load() && _phase->C->get_alias_index(u->adr_type()) == alias) {
+      Node* m = find_mem(_phase->get_ctrl(u), u);
+      if (m != mem) {
+        DEBUG_ONLY(if (trace) { tty->print("ZZZ setting memory of use"); u->dump(); });
+        _phase->igvn().replace_input_of(u, MemNode::Memory, m);
+        --i;
+      }
+    }
+  }
   for (DUIterator i = mem->outs(); mem->has_out(i); i++) {
     Node* u = mem->out(i);
     if (u->_idx < last) {
@@ -2747,7 +2734,7 @@ const Type* ShenandoahLoadReferenceBarrierNode::Value(PhaseTransform *phase) con
     return t2;
   }
 
-  const Type* type = t2->is_oopptr()/*->cast_to_nonconst()*/;
+  const Type* type = t2->is_oopptr();
   return type;
 }
 
@@ -2788,7 +2775,9 @@ bool ShenandoahLoadReferenceBarrierNode::needs_barrier_impl(PhaseTransform* phas
     // tty->print_cr("optimize barrier on null");
     return false;
   }
-  if (type->make_oopptr() && type->make_oopptr()->const_oop() != NULL) {
+  // Impl detail: Need to check isa_(narrow)oop before calling to make_oopptr on potentially non-oop types
+  // in 8u, otherwise make_oopptr would assert. make_oopptr is fixed later during JDK-8078629.
+  if ((type->isa_oopptr() || type->isa_narrowoop()) && type->make_oopptr()->const_oop() != NULL) {
     // tty->print_cr("optimize barrier on constant");
     return false;
   }

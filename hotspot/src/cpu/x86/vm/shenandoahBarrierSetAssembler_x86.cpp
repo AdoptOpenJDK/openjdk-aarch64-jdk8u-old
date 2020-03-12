@@ -40,50 +40,67 @@ ShenandoahBarrierSetAssembler* ShenandoahBarrierSetAssembler::bsasm() {
 
 #define __ masm->
 
-void ShenandoahBarrierSetAssembler::resolve_forward_pointer(MacroAssembler* masm, Register dst, Register tmp) {
-  assert(ShenandoahCASBarrier, "should be enabled");
-  Label is_null;
-  __ testptr(dst, dst);
-  __ jcc(Assembler::zero, is_null);
-  resolve_forward_pointer_not_null(masm, dst, tmp);
-  __ bind(is_null);
-}
+void ShenandoahBarrierSetAssembler::arraycopy_prologue(MacroAssembler* masm, bool dest_uninitialized,
+                                                       Register src, Register dst, Register count) {
 
-void ShenandoahBarrierSetAssembler::resolve_forward_pointer_not_null(MacroAssembler* masm, Register dst, Register tmp) {
-  assert(ShenandoahCASBarrier || ShenandoahLoadRefBarrier, "should be enabled");
-  // The below loads the mark word, checks if the lowest two bits are
-  // set, and if so, clear the lowest two bits and copy the result
-  // to dst. Otherwise it leaves dst alone.
-  // Implementing this is surprisingly awkward. I do it here by:
-  // - Inverting the mark word
-  // - Test lowest two bits == 0
-  // - If so, set the lowest two bits
-  // - Invert the result back, and copy to dst
-
-  bool borrow_reg = (tmp == noreg);
-  if (borrow_reg) {
-    // No free registers available. Make one useful.
-    tmp = LP64_ONLY(rscratch1) NOT_LP64(rdx);
-    if (tmp == dst) {
-      tmp = LP64_ONLY(rscratch2) NOT_LP64(rcx);
+  if ((ShenandoahSATBBarrier && !dest_uninitialized) || ShenandoahLoadRefBarrier) {
+#ifdef _LP64
+    Register thread = r15_thread;
+#else
+    Register thread = rax;
+    if (thread == src || thread == dst || thread == count) {
+      thread = rbx;
     }
-    __ push(tmp);
-  }
+    if (thread == src || thread == dst || thread == count) {
+      thread = rcx;
+    }
+    if (thread == src || thread == dst || thread == count) {
+      thread = rdx;
+    }
+    __ push(thread);
+    __ get_thread(thread);
+#endif
+    assert_different_registers(src, dst, count, thread);
 
-  assert_different_registers(dst, tmp);
+    Label done;
+    // Short-circuit if count == 0.
+    __ testptr(count, count);
+    __ jcc(Assembler::zero, done);
 
-  Label done;
-  __ movptr(tmp, Address(dst, oopDesc::mark_offset_in_bytes()));
-  __ notptr(tmp);
-  __ testb(tmp, markOopDesc::marked_value);
-  __ jccb(Assembler::notZero, done);
-  __ orptr(tmp, markOopDesc::marked_value);
-  __ notptr(tmp);
-  __ mov(dst, tmp);
-  __ bind(done);
+    // Avoid runtime call when not marking.
+    Address gc_state(thread, in_bytes(JavaThread::gc_state_offset()));
+    int flags = ShenandoahHeap::HAS_FORWARDED;
+    if (!dest_uninitialized) {
+      flags |= ShenandoahHeap::MARKING;
+    }
+    __ testb(gc_state, flags);
+    __ jcc(Assembler::zero, done);
 
-  if (borrow_reg) {
-    __ pop(tmp);
+    __ pusha();                      // push registers
+#ifdef _LP64
+    assert(src == rdi, "expected");
+    assert(dst == rsi, "expected");
+    // commented-out for generate_conjoint_long_oop_copy(), call_VM_leaf() will move
+    // register into right place.
+    // assert(count == rdx, "expected");
+    if (UseCompressedOops) {
+      if (dest_uninitialized) {
+        __ call_VM_leaf(CAST_FROM_FN_PTR(address, ShenandoahRuntime::write_ref_array_pre_duinit_narrow_oop_entry), src, dst, count);
+      } else {
+        __ call_VM_leaf(CAST_FROM_FN_PTR(address, ShenandoahRuntime::write_ref_array_pre_narrow_oop_entry), src, dst, count);
+      }
+    } else
+#endif
+      {
+        if (dest_uninitialized) {
+          __ call_VM_leaf(CAST_FROM_FN_PTR(address, ShenandoahRuntime::write_ref_array_pre_duinit_oop_entry), src, dst, count);
+        } else {
+          __ call_VM_leaf(CAST_FROM_FN_PTR(address, ShenandoahRuntime::write_ref_array_pre_oop_entry), src, dst, count);
+        }
+      }
+    __ popa();
+    __ bind(done);
+    NOT_LP64(__ pop(thread);)
   }
 }
 
@@ -224,8 +241,9 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
                                                 bool exchange, Register tmp1, Register tmp2) {
   assert(ShenandoahCASBarrier, "Should only be used when CAS barrier is enabled");
   assert(oldval == rax, "must be in rax for implicit use in cmpxchg");
+  assert_different_registers(oldval, newval, tmp1, tmp2);
 
-  Label retry, done;
+  Label L_success, L_failure;
 
   // Remember oldval for retry logic below
 #ifdef _LP64
@@ -237,8 +255,10 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
     __ movptr(tmp1, oldval);
   }
 
-  // Step 1. Try to CAS with given arguments. If successful, then we are done,
-  // and can safely return.
+  // Step 1. Fast-path.
+  //
+  // Try to CAS with given arguments. If successful, then we are done.
+
   if (os::is_MP()) __ lock();
 #ifdef _LP64
   if (UseCompressedOops) {
@@ -248,21 +268,32 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
   {
     __ cmpxchgptr(newval, addr);
   }
-  __ jcc(Assembler::equal, done, true);
+  __ jcc(Assembler::equal, L_success);
 
   // Step 2. CAS had failed. This may be a false negative.
   //
   // The trouble comes when we compare the to-space pointer with the from-space
-  // pointer to the same object. To resolve this, it will suffice to resolve both
-  // oldval and the value from memory -- this will give both to-space pointers.
+  // pointer to the same object. To resolve this, it will suffice to resolve
+  // the value from memory -- this will give both to-space pointers.
   // If they mismatch, then it was a legitimate failure.
   //
+  // Before reaching to resolve sequence, see if we can avoid the whole shebang
+  // with filters.
+
+  // Filter: when offending in-memory value is NULL, the failure is definitely legitimate
+  __ testptr(oldval, oldval);
+  __ jcc(Assembler::zero, L_failure);
+
+  // Filter: when heap is stable, the failure is definitely legitimate
 #ifdef _LP64
-  if (UseCompressedOops) {
-    __ decode_heap_oop(tmp1);
-  }
+  const Register thread = r15_thread;
+#else
+  const Register thread = tmp2;
+  __ get_thread(thread);
 #endif
-  resolve_forward_pointer(masm, tmp1);
+  Address gc_state(thread, in_bytes(JavaThread::gc_state_offset()));
+  __ testb(gc_state, ShenandoahHeap::HAS_FORWARDED);
+  __ jcc(Assembler::zero, L_failure);
 
 #ifdef _LP64
   if (UseCompressedOops) {
@@ -273,18 +304,70 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
   {
     __ movptr(tmp2, oldval);
   }
-  resolve_forward_pointer(masm, tmp2);
 
+  // Decode offending in-memory value.
+  // Test if-forwarded
+  __ testb(Address(tmp2, oopDesc::mark_offset_in_bytes()), markOopDesc::marked_value);
+  __ jcc(Assembler::noParity, L_failure);  // When odd number of bits, then not forwarded
+  __ jcc(Assembler::zero, L_failure);      // When it is 00, then also not forwarded
+
+  // Load and mask forwarding pointer
+  __ movptr(tmp2, Address(tmp2, oopDesc::mark_offset_in_bytes()));
+  __ shrptr(tmp2, 2);
+  __ shlptr(tmp2, 2);
+
+#ifdef _LP64
+  if (UseCompressedOops) {
+    __ decode_heap_oop(tmp1); // decode for comparison
+  }
+#endif
+
+  // Now we have the forwarded offender in tmp2.
+  // Compare and if they don't match, we have legitimate failure
   __ cmpptr(tmp1, tmp2);
-  __ jcc(Assembler::notEqual, done, true);
+  __ jcc(Assembler::notEqual, L_failure);
 
-  // Step 3. Try to CAS again with resolved to-space pointers.
+  // Step 3. Need to fix the memory ptr before continuing.
   //
-  // Corner case: it may happen that somebody stored the from-space pointer
-  // to memory while we were preparing for retry. Therefore, we can fail again
-  // on retry, and so need to do this in loop, always resolving the failure
-  // witness.
-  __ bind(retry);
+  // At this point, we have from-space oldval in the register, and its to-space
+  // address is in tmp2. Let's try to update it into memory. We don't care if it
+  // succeeds or not. If it does, then the retrying CAS would see it and succeed.
+  // If this fixup fails, this means somebody else beat us to it, and necessarily
+  // with to-space ptr store. We still have to do the retry, because the GC might
+  // have updated the reference for us.
+
+#ifdef _LP64
+  if (UseCompressedOops) {
+    __ encode_heap_oop(tmp2); // previously decoded at step 2.
+  }
+#endif
+
+  if (os::is_MP()) __ lock();
+#ifdef _LP64
+  if (UseCompressedOops) {
+    __ cmpxchgl(tmp2, addr);
+  } else
+#endif
+  {
+    __ cmpxchgptr(tmp2, addr);
+  }
+
+  // Step 4. Try to CAS again.
+  //
+  // This is guaranteed not to have false negatives, because oldval is definitely
+  // to-space, and memory pointer is to-space as well. Nothing is able to store
+  // from-space ptr into memory anymore. Make sure oldval is restored, after being
+  // garbled during retries.
+  //
+#ifdef _LP64
+  if (UseCompressedOops) {
+    __ movl(oldval, tmp2);
+  } else
+#endif
+  {
+    __ movptr(oldval, tmp2);
+  }
+
   if (os::is_MP()) __ lock();
 #ifdef _LP64
   if (UseCompressedOops) {
@@ -294,41 +377,28 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
   {
     __ cmpxchgptr(newval, addr);
   }
-  __ jcc(Assembler::equal, done, true);
-
-#ifdef _LP64
-  if (UseCompressedOops) {
-    __ movl(tmp2, oldval);
-    __ decode_heap_oop(tmp2);
-  } else
-#endif
-  {
-    __ movptr(tmp2, oldval);
-  }
-  resolve_forward_pointer(masm, tmp2);
-
-  __ cmpptr(tmp1, tmp2);
-  __ jcc(Assembler::equal, retry, true);
-
-  // Step 4. If we need a boolean result out of CAS, check the flag again,
-  // and promote the result. Note that we handle the flag from both the CAS
-  // itself and from the retry loop.
-  __ bind(done);
   if (!exchange) {
+    __ jccb(Assembler::equal, L_success); // fastpath, peeking into Step 5, no need to jump
+  }
+
+  // Step 5. If we need a boolean result out of CAS, set the flag appropriately.
+  // and promote the result. Note that we handle the flag from both the 1st and 2nd CAS.
+  // Otherwise, failure witness for CAE is in oldval on all paths, and we can return.
+
+  if (exchange) {
+    __ bind(L_failure);
+    __ bind(L_success);
+  } else {
     assert(res != NULL, "need result register");
-#ifdef _LP64
-    __ setb(Assembler::equal, res);
-    __ movzbl(res, res);
-#else
-    // Need something else to clean the result, because some registers
-    // do not have byte encoding that movzbl wants. Cannot do the xor first,
-    // because it modifies the flags.
-    Label res_non_zero;
-    __ movptr(res, 1);
-    __ jcc(Assembler::equal, res_non_zero, true);
+
+    Label exit;
+    __ bind(L_failure);
     __ xorptr(res, res);
-    __ bind(res_non_zero);
-#endif
+    __ jmpb(exit);
+
+    __ bind(L_success);
+    __ movptr(res, 1);
+    __ bind(exit);
   }
 }
 
@@ -350,10 +420,8 @@ void ShenandoahBarrierSetAssembler::gen_load_reference_barrier_stub(LIR_Assemble
   }
 
   // Check for null.
-  if (stub->needs_null_check()) {
-    __ testptr(res, res);
-    __ jcc(Assembler::zero, done);
-  }
+  __ testptr(res, res);
+  __ jcc(Assembler::zero, done);
 
   load_reference_barrier_not_null(ce->masm(), res);
 

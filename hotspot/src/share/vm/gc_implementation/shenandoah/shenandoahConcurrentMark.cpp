@@ -281,9 +281,12 @@ public:
       rp = NULL;
     }
 
-    // Degenerated cycle may bypass concurrent cycle, so code roots might not be scanned,
-    // let's check here.
-    _cm->concurrent_scan_code_roots(worker_id, rp);
+    if (heap->is_degenerated_gc_in_progress()) {
+      // Degenerated cycle may bypass concurrent cycle, so code roots might not be scanned,
+      // let's check here.
+      _cm->concurrent_scan_code_roots(worker_id, rp);
+    }
+
     _cm->mark_loop(worker_id, _terminator, rp,
                    false, // not cancellable
                    _dedup_string);
@@ -354,6 +357,46 @@ void ShenandoahConcurrentMark::update_roots(ShenandoahPhaseTimings::Phase root_p
   COMPILER2_PRESENT(DerivedPointerTable::update_pointers());
 }
 
+class ShenandoahUpdateThreadRootsTask : public AbstractGangTask {
+private:
+  SharedHeap::StrongRootsScope _srs;
+  ShenandoahPhaseTimings::Phase   _phase;
+public:
+  ShenandoahUpdateThreadRootsTask(bool is_par, ShenandoahPhaseTimings::Phase phase) :
+    AbstractGangTask("Shenandoah Update Thread Roots"),
+    _srs(ShenandoahHeap::heap(), true),
+    _phase(phase) {
+    ShenandoahHeap::heap()->phase_timings()->record_workers_start(_phase);
+  }
+
+  ~ShenandoahUpdateThreadRootsTask() {
+    ShenandoahHeap::heap()->phase_timings()->record_workers_end(_phase);
+  }
+  void work(uint worker_id) {
+    ShenandoahUpdateRefsClosure cl;
+    ShenandoahWorkerTimings* worker_times = ShenandoahHeap::heap()->phase_timings()->worker_times();
+    ShenandoahWorkerTimingsTracker timer(worker_times, ShenandoahPhaseTimings::ThreadRoots, worker_id);
+    ResourceMark rm;
+    Threads::possibly_parallel_oops_do(&cl, NULL, NULL);
+  }
+};
+
+void ShenandoahConcurrentMark::update_thread_roots(ShenandoahPhaseTimings::Phase root_phase) {
+  assert(ShenandoahSafepoint::is_at_shenandoah_safepoint(), "Must be at a safepoint");
+
+  ShenandoahGCPhase phase(root_phase);
+
+  COMPILER2_PRESENT(DerivedPointerTable::clear());
+
+  WorkGang* workers = _heap->workers();
+  bool is_par = workers->active_workers() > 1;
+
+  ShenandoahUpdateThreadRootsTask task(is_par, root_phase);
+  workers->run_task(&task);
+
+  COMPILER2_PRESENT(DerivedPointerTable::update_pointers());
+}
+
 void ShenandoahConcurrentMark::initialize(uint workers) {
   _heap = ShenandoahHeap::heap();
 
@@ -412,7 +455,6 @@ void ShenandoahConcurrentMark::mark_from_roots() {
   task_queues()->reserve(nworkers);
 
   {
-    ShenandoahTerminationTracker term(ShenandoahPhaseTimings::conc_termination);
     ShenandoahTaskTerminator terminator(nworkers, task_queues());
     ShenandoahConcurrentMarkingTask task(this, &terminator);
     workers->run_task(&task);
@@ -447,10 +489,6 @@ void ShenandoahConcurrentMark::finish_mark_from_roots(bool full_gc) {
     shenandoah_assert_rp_isalive_not_installed();
     ShenandoahIsAliveSelector is_alive;
     ReferenceProcessorIsAliveMutator fix_isalive(_heap->ref_processor(), is_alive.is_alive_closure());
-
-    ShenandoahTerminationTracker termination_tracker(full_gc ?
-                                                     ShenandoahPhaseTimings::full_gc_mark_termination :
-                                                     ShenandoahPhaseTimings::termination);
 
     SharedHeap::StrongRootsScope scope(_heap, true);
     ShenandoahTaskTerminator terminator(nworkers, task_queues());
@@ -667,11 +705,6 @@ void ShenandoahConcurrentMark::weak_refs_work_doit(bool full_gc) {
           ShenandoahPhaseTimings::full_gc_weakrefs_enqueue :
           ShenandoahPhaseTimings::weakrefs_enqueue;
 
-  ShenandoahPhaseTimings::Phase phase_process_termination =
-          full_gc ?
-          ShenandoahPhaseTimings::full_gc_weakrefs_termination :
-          ShenandoahPhaseTimings::weakrefs_termination;
-
   shenandoah_assert_rp_isalive_not_installed();
   ShenandoahIsAliveSelector is_alive;
   ReferenceProcessorIsAliveMutator fix_isalive(rp, is_alive.is_alive_closure());
@@ -696,7 +729,6 @@ void ShenandoahConcurrentMark::weak_refs_work_doit(bool full_gc) {
 
   {
     ShenandoahGCPhase phase(phase_process);
-    ShenandoahTerminationTracker phase_term(phase_process_termination);
 
     if (_heap->has_forwarded_objects()) {
       ShenandoahForwardedIsAliveClosure is_alive;
@@ -992,7 +1024,6 @@ void ShenandoahConcurrentMark::mark_loop_work(T* cl, jushort* live_data, uint wo
 
     if (work == 0) {
       // No work encountered in current stride, try to terminate.
-      ShenandoahTerminationTimingsTracker term_tracker(worker_id);
       ShenandoahTerminatorTerminator tt(heap);
       if (terminator->offer_termination(&tt)) return;
     }

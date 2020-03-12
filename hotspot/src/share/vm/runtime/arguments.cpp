@@ -1755,9 +1755,9 @@ void Arguments::set_shenandoah_gc_flags() {
     }
   }
 
-  if (!FLAG_IS_DEFAULT(ShenandoahFreeThreshold)) {
-    if (0 > ShenandoahFreeThreshold || ShenandoahFreeThreshold > 100) {
-      vm_exit_during_initialization("The flag -XX:ShenandoahFreeThreshold is out of range", NULL);
+  if (!FLAG_IS_DEFAULT(ShenandoahMinFreeThreshold)) {
+    if (0 > ShenandoahMinFreeThreshold || ShenandoahMinFreeThreshold > 100) {
+      vm_exit_during_initialization("The flag -XX:ShenandoahMinFreeThreshold is out of range", NULL);
     }
   }
 #endif
@@ -1782,7 +1782,7 @@ void Arguments::set_shenandoah_gc_flags() {
   // compromise here.
   bool ergo_conc = FLAG_IS_DEFAULT(ConcGCThreads);
   if (ergo_conc) {
-    FLAG_SET_DEFAULT(ConcGCThreads, MAX2(1, os::processor_count() / 4));
+    FLAG_SET_DEFAULT(ConcGCThreads, MAX2(1, os::initial_active_processor_count() / 4));
   }
 
   if (ConcGCThreads == 0) {
@@ -1796,7 +1796,7 @@ void Arguments::set_shenandoah_gc_flags() {
   // the number of concurrent threads.
   bool ergo_parallel = FLAG_IS_DEFAULT(ParallelGCThreads);
   if (ergo_parallel) {
-    FLAG_SET_DEFAULT(ParallelGCThreads, MAX2(1, os::processor_count() / 2));
+    FLAG_SET_DEFAULT(ParallelGCThreads, MAX2(1, os::initial_active_processor_count() / 2));
   }
 
   if (ParallelGCThreads == 0) {
@@ -1901,25 +1901,6 @@ void Arguments::set_shenandoah_gc_flags() {
   if (FLAG_IS_DEFAULT(TLABAllocationWeight)) {
     FLAG_SET_DEFAULT(TLABAllocationWeight, 90);
   }
-
-  // Shenandoah needs more C2 nodes to compile some methods with lots of barriers.
-  // NodeLimitFudgeFactor needs to stay the same relative to MaxNodeLimit.
-#ifdef COMPILER2
-  if (FLAG_IS_DEFAULT(MaxNodeLimit)) {
-    FLAG_SET_DEFAULT(MaxNodeLimit, MaxNodeLimit * 3);
-    FLAG_SET_DEFAULT(NodeLimitFudgeFactor, NodeLimitFudgeFactor * 3);
-  }
-#endif
-#endif
-
-  // Make sure safepoint deadlocks are failing predictably. This sets up VM to report
-  // fatal error after 10 seconds of wait for safepoint syncronization (not the VM
-  // operation itself). There is no good reason why Shenandoah would spend that
-  // much time synchronizing.
-#ifdef ASSERT
-  FLAG_SET_DEFAULT(SafepointTimeout, true);
-  FLAG_SET_DEFAULT(SafepointTimeoutDelay, 10000);
-  FLAG_SET_DEFAULT(AbortVMOnSafepointTimeout, true);
 #endif
 }
 

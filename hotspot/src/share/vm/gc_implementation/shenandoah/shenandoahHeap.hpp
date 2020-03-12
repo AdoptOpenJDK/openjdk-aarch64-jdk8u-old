@@ -39,6 +39,7 @@ class ShenandoahCollectorPolicy;
 class ShenandoahConcurrentMark;
 class ShenandoahControlThread;
 class ShenandoahGCSession;
+class ShenandoahGCStateResetter;
 class ShenandoahFreeSet;
 class ShenandoahHeapRegion;
 class ShenandoahHeapRegionClosure;
@@ -110,6 +111,7 @@ class ShenandoahHeap : public SharedHeap {
   friend class ShenandoahAsserts;
   friend class VMStructs;
   friend class ShenandoahGCSession;
+  friend class ShenandoahGCStateResetter;
 
 // ---------- Locks that guard important data structures in Heap
 //
@@ -400,6 +402,9 @@ private:
   const char* init_mark_event_message() const;
   const char* final_mark_event_message() const;
   const char* conc_mark_event_message() const;
+  const char* init_traversal_event_message() const;
+  const char* final_traversal_event_message() const;
+  const char* conc_traversal_event_message() const;
   const char* degen_event_message(ShenandoahDegenPoint point) const;
 
 // ---------- GC subsystems
@@ -416,7 +421,6 @@ private:
   ShenandoahPacer*           _pacer;
   ShenandoahVerifier*        _verifier;
 
-  ShenandoahAllocTracker*    _alloc_tracker;
   ShenandoahPhaseTimings*    _phase_timings;
 
   ShenandoahControlThread*   control_thread()          { return _control_thread;    }
@@ -432,7 +436,6 @@ public:
   ShenandoahPacer*           pacer()             const { return _pacer;             }
 
   ShenandoahPhaseTimings*    phase_timings()     const { return _phase_timings;     }
-  ShenandoahAllocTracker*    alloc_tracker()     const { return _alloc_tracker;     }
 
   ShenandoahVerifier*        verifier();
 
@@ -671,6 +674,7 @@ public:
 
   static inline oop cas_oop(oop n, narrowOop* addr, oop c);
   static inline oop cas_oop(oop n, oop* addr, oop c);
+  static inline oop cas_oop(oop n, narrowOop* addr, narrowOop c);
 
   void trash_humongous_region_at(ShenandoahHeapRegion *r);
 

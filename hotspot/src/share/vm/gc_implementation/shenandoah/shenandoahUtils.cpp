@@ -34,6 +34,7 @@
 #include "gc_implementation/shared/gcTimer.hpp"
 #include "gc_implementation/shared/gcWhen.hpp"
 #include "gc_implementation/shared/gcTrace.hpp"
+#include "utilities/debug.hpp"
 
 ShenandoahPhaseTimings::Phase ShenandoahGCPhase::_current_phase = ShenandoahGCPhase::_invalid_phase;
 
@@ -132,33 +133,6 @@ bool ShenandoahGCPhase::is_root_work_phase() {
       return true;
     default:
       return false;
-  }
-}
-
-ShenandoahAllocTrace::ShenandoahAllocTrace(size_t words_size, ShenandoahAllocRequest::Type alloc_type) {
-  if (ShenandoahAllocationTrace) {
-    _start = os::elapsedTime();
-    _size = words_size;
-    _alloc_type = alloc_type;
-  } else {
-    _start = 0;
-    _size = 0;
-    _alloc_type = ShenandoahAllocRequest::Type(0);
-  }
-}
-
-ShenandoahAllocTrace::~ShenandoahAllocTrace() {
-  if (ShenandoahAllocationTrace) {
-    double stop = os::elapsedTime();
-    double duration_sec = stop - _start;
-    double duration_us = duration_sec * 1000000;
-    ShenandoahAllocTracker* tracker = ShenandoahHeap::heap()->alloc_tracker();
-    assert(tracker != NULL, "Must be");
-    tracker->record_alloc_latency(_size, _alloc_type, duration_us);
-    if (duration_us > ShenandoahAllocationStallThreshold) {
-      log_warning(gc)("Allocation stall: %.0f us (threshold: " INTX_FORMAT " us)",
-                      duration_us, ShenandoahAllocationStallThreshold);
-    }
   }
 }
 
