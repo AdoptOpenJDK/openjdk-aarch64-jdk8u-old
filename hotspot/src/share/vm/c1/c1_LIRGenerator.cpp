@@ -541,11 +541,11 @@ void LIRGenerator::arithmetic_op(Bytecodes::Code code, LIR_Opr result, LIR_Opr l
 
     case Bytecodes::_imul:
       {
-        bool    did_strength_reduce = false;
+        bool did_strength_reduce = false;
 
         if (right->is_constant()) {
-          int c = right->as_jint();
-          if (is_power_of_2(c)) {
+          jint c = right->as_jint();
+          if (c > 0 && is_power_of_2(c)) {
             // do not need tmp here
             __ shift_left(left_op, exact_log2(c), result_op);
             did_strength_reduce = true;
@@ -1235,7 +1235,7 @@ void LIRGenerator::do_Reference_get(Intrinsic* x) {
   if (UseShenandoahGC) {
     LIR_Opr tmp = new_register(T_OBJECT);
     __ load(referent_field_adr, tmp, info);
-    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp, NULL, true);
+    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp);
     __ move(tmp, result);
   } else
 #endif
@@ -1840,7 +1840,7 @@ void LIRGenerator::do_LoadField(LoadField* x) {
     if (is_volatile && os::is_MP()) {
       __ membar_acquire();
     }
-    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp, NULL, true);
+    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp);
     __ move(tmp, reg);
   } else
 #endif
@@ -1977,7 +1977,7 @@ void LIRGenerator::do_LoadIndexed(LoadIndexed* x) {
   if (UseShenandoahGC && (x->elt_type() == T_OBJECT || x->elt_type() == T_ARRAY)) {
     LIR_Opr tmp = new_register(T_OBJECT);
     __ move(array_addr, tmp, null_check_info);
-    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp, NULL, true);
+    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp);
     __ move(tmp, result);
   } else
 #endif
@@ -2275,7 +2275,7 @@ void LIRGenerator::do_UnsafeGetObject(UnsafeGetObject* x) {
   if (UseShenandoahGC && (type == T_OBJECT || type == T_ARRAY)) {
     LIR_Opr tmp = new_register(T_OBJECT);
     get_Object_unsafe(tmp, src.result(), off.result(), type, x->is_volatile());
-    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp, NULL, true);
+    tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, tmp);
     __ move(tmp, value);
   } else
 #endif
@@ -2393,7 +2393,7 @@ void LIRGenerator::do_UnsafeGetObject(UnsafeGetObject* x) {
         __ cmp(lir_cond_equal, src_reg, LIR_OprFact::oopConst(NULL));
         __ branch(lir_cond_equal, T_OBJECT, Lcont->label());
       }
-      LIR_Opr src_klass = new_register(T_OBJECT);
+      LIR_Opr src_klass = new_register(T_METADATA);
       if (gen_type_check) {
         // We have determined that offset == referent_offset && src != null.
         // if (src->_klass->_reference_type == REF_NONE) -> continue
@@ -3358,7 +3358,7 @@ void LIRGenerator::profile_parameters_at_call(ProfileCall* x) {
 void LIRGenerator::do_ProfileCall(ProfileCall* x) {
   // Need recv in a temporary register so it interferes with the other temporaries
   LIR_Opr recv = LIR_OprFact::illegalOpr;
-  LIR_Opr mdo = new_register(T_OBJECT);
+  LIR_Opr mdo = new_register(T_METADATA);
   // tmp is used to hold the counters on SPARC
   LIR_Opr tmp = new_pointer_register();
 

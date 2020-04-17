@@ -39,7 +39,7 @@
 #include "oops/objArrayKlass.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "vmreg_x86.inline.hpp"
-
+#include "utilities/macros.hpp"
 #if INCLUDE_ALL_GCS
 #include "shenandoahBarrierSetAssembler_x86.hpp"
 #endif
@@ -967,7 +967,7 @@ void LIR_Assembler::reg2stack(LIR_Opr src, LIR_Opr dest, BasicType type, bool po
     if (type == T_OBJECT || type == T_ARRAY) {
       __ verify_oop(src->as_register());
       __ movptr (dst, src->as_register());
-    } else if (type == T_METADATA) {
+    } else if (type == T_METADATA || type == T_ADDRESS) {
       __ movptr (dst, src->as_register());
     } else {
       __ movl (dst, src->as_register());
@@ -1148,7 +1148,7 @@ void LIR_Assembler::stack2reg(LIR_Opr src, LIR_Opr dest, BasicType type) {
     if (type == T_ARRAY || type == T_OBJECT) {
       __ movptr(dest->as_register(), frame_map()->address_for_slot(src->single_stack_ix()));
       __ verify_oop(dest->as_register());
-    } else if (type == T_METADATA) {
+    } else if (type == T_METADATA || type == T_ADDRESS) {
       __ movptr(dest->as_register(), frame_map()->address_for_slot(src->single_stack_ix()));
     } else {
       __ movl(dest->as_register(), frame_map()->address_for_slot(src->single_stack_ix()));
@@ -2005,11 +2005,11 @@ void LIR_Assembler::emit_compare_and_swap(LIR_OpCompareAndSwap* op) {
         if (UseShenandoahGC && ShenandoahCASBarrier) {
           Register tmp1 = op->tmp1()->as_register();
           Register tmp2 = op->tmp2()->as_register();
-
+          Register res  = op->result_opr()->as_register();
           __ encode_heap_oop(cmpval);
           __ mov(rscratch1, newval);
           __ encode_heap_oop(rscratch1);
-          ShenandoahBarrierSetAssembler::bsasm()->cmpxchg_oop(_masm, NULL, Address(addr, 0), cmpval, rscratch1, true, tmp1, tmp2);
+          ShenandoahBarrierSetAssembler::bsasm()->cmpxchg_oop(_masm, res, Address(addr, 0), cmpval, rscratch1, false, tmp1, tmp2);
         } else
 #endif
         {
@@ -2029,7 +2029,8 @@ void LIR_Assembler::emit_compare_and_swap(LIR_OpCompareAndSwap* op) {
         if (UseShenandoahGC && ShenandoahCASBarrier) {
           Register tmp1 = op->tmp1()->as_register();
           Register tmp2 = op->tmp2()->as_register();
-          ShenandoahBarrierSetAssembler::bsasm()->cmpxchg_oop(_masm, NULL, Address(addr, 0), cmpval, newval, true, tmp1, tmp2);
+          Register res  = op->result_opr()->as_register();
+          ShenandoahBarrierSetAssembler::bsasm()->cmpxchg_oop(_masm, res, Address(addr, 0), cmpval, newval, false, tmp1, tmp2);
         } else
 #endif
         {

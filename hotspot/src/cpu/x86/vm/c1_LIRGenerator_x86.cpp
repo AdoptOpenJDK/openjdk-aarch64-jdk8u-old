@@ -237,8 +237,8 @@ void LIRGenerator::cmp_reg_mem(LIR_Condition condition, LIR_Opr reg, LIR_Opr bas
 }
 
 
-bool LIRGenerator::strength_reduce_multiply(LIR_Opr left, int c, LIR_Opr result, LIR_Opr tmp) {
-  if (tmp->is_valid()) {
+bool LIRGenerator::strength_reduce_multiply(LIR_Opr left, jint c, LIR_Opr result, LIR_Opr tmp) {
+  if (tmp->is_valid() && c > 0 && c < max_jint) {
     if (is_power_of_2(c + 1)) {
       __ move(left, tmp);
       __ shift_left(left, log2_jint(c + 1), left);
@@ -606,8 +606,8 @@ void LIRGenerator::do_ArithmeticOp_Int(ArithmeticOp* x) {
       bool use_constant = false;
       bool use_tmp = false;
       if (right_arg->is_constant()) {
-        int iconst = right_arg->get_jint_constant();
-        if (iconst > 0) {
+        jint iconst = right_arg->get_jint_constant();
+        if (iconst > 0 && iconst < max_jint) {
           if (is_power_of_2(iconst)) {
             use_constant = true;
           } else if (is_power_of_2(iconst - 1) || is_power_of_2(iconst + 1)) {
@@ -792,8 +792,11 @@ void LIRGenerator::do_CompareAndSwap(Intrinsic* x, ValueType* type) {
   LIR_Opr ill = LIR_OprFact::illegalOpr;  // for convenience
   if (type == objectType) {
 #if INCLUDE_ALL_GCS
-    if (UseShenandoahGC) {
-      __ cas_obj(addr, cmp.result(), val.result(), new_register(T_OBJECT), new_register(T_OBJECT));
+    if (UseShenandoahGC && ShenandoahCASBarrier) {
+      LIR_Opr result = rlock_result(x);
+      __ cas_obj(addr, cmp.result(), val.result(), new_register(T_OBJECT), new_register(T_OBJECT), result);
+      // Shenandoah C1 barrier would do all result management itself, shortcut here.
+      return;
     } else
 #endif
     {
@@ -1500,10 +1503,8 @@ void LIRGenerator::do_UnsafeGetAndSetObject(UnsafeGetAndSetObject* x) {
 
 #if INCLUDE_ALL_GCS
     if (UseShenandoahGC && is_obj) {
-      dst = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, dst, NULL, true);
-      LIR_Opr tmp = new_register(type);
-      __ move(dst, tmp);
-      dst = tmp;
+      LIR_Opr tmp = ShenandoahBarrierSet::barrier_set()->bsc1()->load_reference_barrier(this, dst);
+      __ move(tmp, dst);
     }
 #endif
 

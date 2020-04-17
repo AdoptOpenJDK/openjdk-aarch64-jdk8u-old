@@ -433,7 +433,6 @@ public:
 
 private:
   // support arrays
-  static const BasicType _basic_type[];
   static const Type*        _zero_type[T_CONFLICT+1];
   static const Type* _const_basic_type[T_CONFLICT+1];
 };
@@ -972,8 +971,6 @@ public:
 
   virtual const TypeOopPtr *cast_to_instance_id(int instance_id) const;
 
-  virtual const TypeOopPtr *cast_to_nonconst() const;
-
   // corresponding pointer to klass, for a given instance
   const TypeKlassPtr* as_klass_type() const;
 
@@ -1065,8 +1062,6 @@ class TypeInstPtr : public TypeOopPtr {
 
   virtual const TypeOopPtr *cast_to_instance_id(int instance_id) const;
 
-  virtual const TypeOopPtr *cast_to_nonconst() const;
-
   virtual const TypePtr *add_offset( intptr_t offset ) const;
   // Return same type without a speculative part
   virtual const Type* remove_speculative() const;
@@ -1142,8 +1137,6 @@ public:
 
   virtual const TypeOopPtr *cast_to_instance_id(int instance_id) const;
 
-  virtual const TypeOopPtr *cast_to_nonconst() const;
-
   virtual const TypeAryPtr* cast_to_size(const TypeInt* size) const;
   virtual const TypeInt* narrow_size_type(const TypeInt* size) const;
 
@@ -1159,6 +1152,8 @@ public:
 
   const TypeAryPtr* cast_to_stable(bool stable, int stable_dimension = 1) const;
   int stable_dimension() const;
+
+  static jint max_array_length(BasicType etype) ;
 
   // Convenience common pre-built types.
   static const TypeAryPtr *RANGE;
@@ -1654,7 +1649,7 @@ inline const TypePtr* Type::make_ptr() const {
 }
 
 inline const TypeOopPtr* Type::make_oopptr() const {
-  return (_base == NarrowOop) ? is_narrowoop()->get_ptrtype()->is_oopptr() : isa_oopptr();
+  return (_base == NarrowOop) ? is_narrowoop()->get_ptrtype()->is_oopptr() : is_oopptr();
 }
 
 inline const TypeNarrowOop* Type::make_narrowoop() const {

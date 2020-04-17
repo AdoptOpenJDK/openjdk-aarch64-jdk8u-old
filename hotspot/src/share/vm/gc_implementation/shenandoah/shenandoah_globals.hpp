@@ -92,10 +92,6 @@
           "it can be marked for collection. Does not apply to all "         \
           "heuristics.")                                                    \
                                                                             \
-  experimental(uintx, ShenandoahFreeThreshold, 10,                          \
-          "Set the percentage of free heap at which a GC cycle is started. "\
-          "Does not apply to all heuristics.")                              \
-                                                                            \
   experimental(uintx, ShenandoahInitFreeThreshold, 70,                      \
           "Initial remaining free heap threshold for learning steps in "    \
           "heuristics. In percents of total heap size. Does not apply to "  \
@@ -224,20 +220,6 @@
           "evacuation reserve/waste is incorrect, at the risk that "        \
           "application allocations run out of memory too early.")           \
                                                                             \
-  diagnostic(bool, ShenandoahAllocationTrace, false,                        \
-          "Trace allocation latencies and stalls. Can be expensive when "   \
-          "lots of allocations happen, and may introduce scalability "      \
-          "bottlenecks.")                                                   \
-                                                                            \
-  diagnostic(intx, ShenandoahAllocationStallThreshold, 10000,               \
-          "When allocation tracing is enabled, the allocation stalls "      \
-          "larger than this threshold would be reported as warnings. "      \
-          "Time is in microseconds.")                                       \
-                                                                            \
-  experimental(uintx, ShenandoahEvacAssist, 10,                             \
-          "How many objects to evacuate on LRB assist path. "               \
-          "Use zero to disable.")                                           \
-                                                                            \
   experimental(bool, ShenandoahPacing, true,                                \
           "Pace application allocations to give GC chance to start "        \
           "and complete before allocation failure is reached.")             \
@@ -293,9 +275,6 @@
   diagnostic(bool, ShenandoahAllocFailureALot, false,                       \
           "Make lots of artificial allocation failures.")                   \
                                                                             \
-  diagnostic(bool, ShenandoahTerminationTrace, false,                       \
-          "Tracing task termination timings")                               \
-                                                                            \
   diagnostic(bool, ShenandoahAlwaysPreTouch, false,                         \
           "Pre-touch heap memory, overrides global AlwaysPreTouch")         \
                                                                             \
@@ -317,7 +296,7 @@
           "Forcefully flush non-empty SATB buffers at this interval. "      \
           "Time is in milliseconds.")                                       \
                                                                             \
-  experimental(bool, ShenandoahPreclean, true,                              \
+  diagnostic(bool, ShenandoahPreclean, true,                                \
           "Do concurrent preclean phase before final mark: process "        \
           "definitely alive references to avoid dealing with them during "  \
           "pause.")                                                         \
@@ -340,10 +319,10 @@
   diagnostic(bool, ShenandoahLoadRefBarrier, true,                          \
           "Turn on/off load-reference barriers in Shenandoah")              \
                                                                             \
-  experimental(bool, ShenandoahConcurrentScanCodeRoots, true,               \
+  diagnostic(bool, ShenandoahConcurrentScanCodeRoots, true,                 \
           "Scan code roots concurrently, instead of during a pause")        \
                                                                             \
-  experimental(uintx, ShenandoahCodeRootsStyle, 2,                          \
+  diagnostic(uintx, ShenandoahCodeRootsStyle, 2,                            \
           "Use this style to scan code cache:"                              \
           " 0 - sequential iterator;"                                       \
           " 1 - parallel iterator;"                                         \
@@ -353,9 +332,6 @@
           "Optimize barriers on static final fields. "                      \
           "Turn it off for maximum compatibility with reflection or JNI "   \
           "code that manipulates final fields.")                            \
-                                                                            \
-  experimental(bool, ShenandoahCommonGCStateLoads, false,                   \
-         "Enable commonming for GC state loads in generated code.")         \
                                                                             \
   develop(bool, ShenandoahVerifyOptoBarriers, false,                        \
           "Verify no missing barriers in c2")                               \
